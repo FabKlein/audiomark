@@ -27,6 +27,8 @@
 #if defined __PERF_COUNTER__
 #include "perf_counter.h"
 #endif
+extern uint32_t SystemCoreClock;
+uint32_t reduced_test_mode = 0;
 #else
 #error "Operating system not recognized"
 #endif
@@ -79,7 +81,7 @@ time_audiomark_run(uint32_t iterations, uint64_t *dt)
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
     bool     err        = false;
     uint32_t iterations = 1;
@@ -95,26 +97,39 @@ main(void)
 
     printf("Computing run speed\n");
 
-    do
+#if defined __arm__
+    if(argc > 1)
+        reduced_test_mode = atoi(argv[1]);
+
+    if (reduced_test_mode > 0) {
+        printf("skipped training : 1 iteration / reducing input len by %d\n", reduced_test_mode);
+        iterations = 1;
+    }
+    else
+#endif
     {
-        iterations *= 2;
-        err = time_audiomark_run(iterations, &dt);
+        do
+        {
+            iterations *= 2;
+            err = time_audiomark_run(iterations, &dt);
+            if (err)
+            {
+                break;
+            }
+        } while (dt < 1e6);
+
         if (err)
         {
-            break;
+            printf("Failed to compute iteration speed\n");
+            goto exit;
         }
-    } while (dt < 1e6);
 
-    if (err)
-    {
-        printf("Failed to compute iteration speed\n");
-        goto exit;
+        // Must run for 10 sec. or at least 10 iterations
+        float scale = 11e6 / dt;
+        iterations  = (uint32_t)((float)iterations * scale);
+        iterations  = iterations < 10 ? 10 : iterations;
+
     }
-
-    // Must run for 10 sec. or at least 10 iterations
-    float scale = 11e6 / dt;
-    iterations  = (uint32_t)((float)iterations * scale);
-    iterations  = iterations < 10 ? 10 : iterations;
 
     printf("Measuring\n");
 
@@ -133,10 +148,19 @@ main(void)
      */
     float sec   = (float)dt / 1.0e6f;
     float score = (float)iterations / sec * 1000.f * (1 / 1.5f);
-
+#if defined __arm__
+    if (reduced_test_mode > 0) {
+        printf("reduced_test_mode : score is estimated\n");
+        score = score / (float)reduced_test_mode;
+    }
+#endif
     printf("Total runtime    : %.3f seconds\n", sec);
     printf("Total iterations : %d iterations\n", iterations);
     printf("Score            : %f AudioMarks\n", score);
+
+#if defined __arm__
+    printf("Freq Scal Score  : %f AudioMarks / Mhz\n", (float)score / (float)(SystemCoreClock/1e6));
+#endif
 exit:
     ee_audiomark_release();
     return err ? -1 : 0;

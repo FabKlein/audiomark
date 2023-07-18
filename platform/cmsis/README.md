@@ -151,7 +151,7 @@ telnetterminal2: Listening for serial connection on port 5001
 
 The Audiomark Corstone-300 FPGA main application can be built by importing the **audiomark_app.Release+MPS3-Corstone-300.cprj** in uVision (Project=>Import)
 
-- The printf messages are output to MPS3 FPGA board 2nd UART port (settings `115200, 8,N,1`) by project default setting. 
+- The printf messages are output to MPS3 FPGA board 2nd UART port (settings `115200, 8,N,1`) by project default setting.
 - To change printf messages to Debug (printf) Viewer window using the tracing method through JTAG, please select ITM for STDOUT under Compiler => I/O in Manage Run-Time Environment menu.
 
 Various individual audiomark components unit-tests project can imported using the different cprojects files provided in this folder (e.g. *testanr.Release+MPS3-Corstone-300.cprj* for Noise suppressor Corstone-300 Unit test)
@@ -169,3 +169,25 @@ For Virtual Hardware audiomark components, import projects having `VHT` prefix l
  - For Corstone-310, small TCMs prevent Code and Data to fit in these. Internal SRAM are used and benchmarks will run with caches enabled. MPS3 FPGA system clock frequency runs at `25Mhz`
  - For MPS2+ Cortex-M33 IoTKit, default system clock frequency runs at `20Mhz`
  - For MPS2+ Cortex-M4/Cortex-M7, CMSDK default system clock frequency runs at `25Mhz`
+
+
+## Open Source LLVM trial
+
+WIP, works with ARMCM55/85 Pseudo Devices
+
+ - Requires:
+    - CMSIS-Toolbox 2.0.0
+      - need to include https://github.com/Open-CMSIS-Pack/devtools/pull/1047
+    - CMSIS-DSP
+      - need to include https://github.com/ARM-software/CMSIS-DSP/commit/7f6c656418bf7d2f4d702f6af17ec845c7e7542d
+    - CMSIS_6 (https://github.com/ARM-software/CMSIS_6)
+    - LLVM branch + PR19 (https://github.com/ARM-software/CMSIS_6/pull/19)
+    - CMSIS Device Family Pack with Arm pseudo devices (CS300/CS310 need update, https://github.com/ARM-software/CMSIS-DFP)
+
+### build
+
+e.g. beamformer test
+
+```
+cbuild --context testabf.Release+VHT_M85 audiomark.csolution.yml  --update-rte -v --toolchain CLANG
+```

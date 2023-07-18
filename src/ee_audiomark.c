@@ -13,6 +13,10 @@
 #include <stdio.h>
 #include "ee_audiomark.h"
 
+#if defined __arm__
+extern int32_t reduced_test_mode;
+#endif
+
 extern const int16_t downlink_audio[NINPUT_SAMPLES];
 extern const int16_t left_microphone_capture[NINPUT_SAMPLES];
 extern const int16_t right_microphone_capture[NINPUT_SAMPLES];
@@ -106,7 +110,16 @@ ee_copy_audio(int16_t *pt, int16_t debug)
         return 1;
     }
 
+
+#if defined __arm__
+    uint32_t total_samples = NINPUT_SAMPLES;
+    if (reduced_test_mode > 1)
+        total_samples = total_samples / reduced_test_mode;
+
+    if ((progress_count + SAMPLES_PER_AUDIO_FRAME) >= total_samples)
+#else
     if ((progress_count + SAMPLES_PER_AUDIO_FRAME) >= NINPUT_SAMPLES)
+#endif
     {
         read_all_audio_data = 1;
         return 1;
@@ -162,13 +175,13 @@ ee_audiomark_initialize(void)
     p_req = &memreq_kws_f32;
     ee_kws_f32(NODE_MEMREQ, (void **)&p_req, NULL, NULL);
 
-    
+
         printf("Memory alloc summary:\n");
         printf(" bmf = %d\n", memreq_bmf_f32);
         printf(" aec = %d\n", memreq_aec_f32);
         printf(" anr = %d\n", memreq_anr_f32);
         printf(" kws = %d\n", memreq_kws_f32);
-    
+
 
     /* Using our heap `all_instances` assign the instances and requests */
     p_bmf_inst = th_malloc(memreq_bmf_f32, COMPONENT_BMF);
@@ -207,12 +220,51 @@ ee_audiomark_release(void)
         goto exit_error; \
     }
 
+#if defined __arm__
+__attribute__ ((noinline)) int ee_audiomark_single(void)
+{
+    ee_copy_audio(audio_input, 0);
+    ee_copy_audio(left_capture, 0);
+    ee_copy_audio(right_capture, 0);
+
+    // linear feedback of the loudspeaker to the MICs
+    for (int i = 0; i < BYTES_PER_AUDIO_FRAME / 2; i++)
+    {
+        left_capture[i]  = left_capture[i] + audio_input[i];
+        right_capture[i] = right_capture[i] + audio_input[i];
+    }
+
+    CHECK(ee_abf_f32(NODE_RUN, (void **)&p_bmf_inst, xdais_bmf, NULL));
+    CHECK(ee_aec_f32(NODE_RUN, (void **)&p_aec_inst, xdais_aec, NULL));
+    CHECK(ee_anr_f32(NODE_RUN, (void **)&p_anr_inst, xdais_anr, NULL));
+    CHECK(ee_kws_f32(NODE_RUN, (void **)&p_kws_inst, xdais_kws, NULL));
+
+    // save the cleaned audio for ASR
+    ee_copy_audio(aec_output, 0);
+
+
+    return 0;
+exit_error:
+    return -1;
+}
+#endif
+
+#if defined __arm__
+__attribute__ ((noinline))
+#endif
 int
 ee_audiomark_run(void)
 {
+    __asm volatile("DBG     #0xb\n");
     ee_reset_audio();
     while (!read_all_audio_data)
     {
+#if defined __arm__
+        __asm volatile("DBG     #0xa\n");
+        if(ee_audiomark_single() < 0)
+            goto exit_error;
+        __asm volatile("DBG    #0x2\n");
+#else
         ee_copy_audio(audio_input, 0);
         ee_copy_audio(left_capture, 0);
         ee_copy_audio(right_capture, 0);
@@ -231,8 +283,11 @@ ee_audiomark_run(void)
 
         // save the cleaned audio for ASR
         ee_copy_audio(aec_output, 0);
+#endif
     }
+     __asm volatile("DBG    #0x3\n");
     return 0;
 exit_error:
+     __asm volatile("DBG    #0x3\n");
     return -1;
 }

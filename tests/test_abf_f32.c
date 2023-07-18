@@ -47,13 +47,18 @@ main(int argc, char *argv[])
     uint32_t  A             = 0;
     uint32_t  B             = 0;
     float     ratio         = 0.0f;
+    int       max = TEST_NBUFFERS;
+
+    // shorten test duration
+    if(argc > 1)
+        max = atoi(argv[1]);
 
     if (ee_abf_f32(NODE_MEMREQ, (void **)&p_req, NULL, NULL))
     {
         printf("ABF NODE_MEMREQ failed\n");
         return -1;
     }
-    printf("ABF MEMREQ = %d bytes\n", memreq);
+    printf("ABF MEMREQ = %d bytes, Max frame(s) %d\n", memreq, max);
 
     inst = malloc(memreq);
     if (!inst)
@@ -72,7 +77,7 @@ main(int argc, char *argv[])
         return -1;
     }
 
-    for (unsigned i = 0; i < TEST_NBUFFERS; ++i)
+    for (unsigned i = 0; i < max; ++i)
     {
         memcpy(p_left, &p_channel1[i], NFRAMEBYTES);
         memcpy(p_right, &p_channel2[i], NFRAMEBYTES);
