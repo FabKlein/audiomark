@@ -384,8 +384,8 @@ static void compute_gain_floor(int noise_suppress, int effective_echo_suppress, 
    float echo_floor;
    float noise_floor;
 
-   noise_floor = exp(.2302585f*noise_suppress);
-   echo_floor = exp(.2302585f*effective_echo_suppress);
+   noise_floor = expf(.2302585f*noise_suppress);
+   echo_floor = expf(.2302585f*effective_echo_suppress);
 
    /* Compute the gain floor based on different floors for the background noise and residual echo */
    for (i=0;i<len;i++)
@@ -600,7 +600,7 @@ static void speex_compute_agc(SpeexPreprocessState *st, spx_word16_t Pframe, spx
    }
    /*printf ("%f %f %f %f\n", Pframe, loudness, pow(st->loudness, 1.0f/LOUDNESS_EXP), st->loudness2);*/
 
-   target_gain = AMP_SCALE*st->agc_level*pow(st->loudness/(1e-4f+st->loudness_accum), -1.0f/LOUDNESS_EXP);
+   target_gain = AMP_SCALE*st->agc_level*powf(st->loudness/(1e-4f+st->loudness_accum), -1.0f/LOUDNESS_EXP);
 
    if ((Pframe>.5f  && st->nb_adapt > 20) || target_gain < st->agc_gain)
    {
@@ -911,7 +911,7 @@ EXPORT int speex_preprocess_run(SpeexPreprocessState *st, spx_int16_t *x)
 /*Q8*/tmp = EXTRACT16(PSHR32(MULT16_16(PDIV32_16(SHL32(EXTEND32(q),8),(Q15_ONE-q)),tmp),8));
       st->gain2[i]=DIV32_16(SHL32(EXTEND32(32767),SNR_SHIFT), ADD16(256,tmp));
 #else
-      st->gain2[i]=1/(1.f + (q/(1.f-q))*(1+st->prior[i])*exp(-theta));
+      st->gain2[i]=1.f/(1.f + (q/(1.f-q))*(1.f+st->prior[i])*expf(-theta));
 #endif
    }
 

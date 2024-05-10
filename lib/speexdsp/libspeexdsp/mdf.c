@@ -183,7 +183,7 @@ static inline void filter_dc_notch16(const spx_int16_t *in, spx_word16_t radius,
 #ifdef FIXED_POINT
    den2 = MULT16_16_Q15(radius,radius) + MULT16_16_Q15(QCONST16(.7f,15),MULT16_16_Q15(32767-radius,32767-radius));
 #else
-   den2 = radius*radius + .7*(1-radius)*(1-radius);
+   den2 = radius*radius + .7f*(1.0f-radius)*(1.0f-radius);
 #endif
    /*printf ("%d %d %d %d %d %d\n", num[0], num[1], num[2], den[0], den[1], den[2]);*/
    for (i=0;i<len;i++)
