@@ -33,35 +33,53 @@
 
 
 #include <stdint.h>
+#include <arm_neon.h>
 
 /*
  * Reference code for optimized routines
  */
 
-#define VISIB_ATTR static
+//#define VISIB_ATTR static
+#define VISIB_ATTR __attribute__ ((noinline))
+
 
 #ifdef OVERRIDE_MDF_DC_NOTCH
 VISIB_ATTR void filter_dc_notch16(const spx_int16_t * in, spx_word16_t radius, spx_word16_t * out, int len, spx_mem_t * mem, int stride)
 {
+
     int             i;
     spx_word16_t    den2;
-#ifdef FIXED_POINT
-    den2 = MULT16_16_Q15(radius, radius) + MULT16_16_Q15(QCONST16(.7f, 15), MULT16_16_Q15(32767 - radius, 32767 - radius));
-#else
+    spx_word16_t    radius2 = radius * 2;
+   // uint32x4_t      idx = vmulq_n_u32(vidupq_n_u32(0, 1), stride);
+    float32_t       mem1 = mem[1];
+    float32_t       mem0 = mem[0];
+
     den2 = radius * radius + .7f * (1.0f - radius) * (1.0f - radius);
-#endif
-    /*printf ("%d %d %d %d %d %d\n", num[0], num[1], num[2], den[0], den[1], den[2]); */
-    for (i = 0; i < len; i++) {
-        spx_word16_t    vin = in[i * stride];
-        spx_word32_t    vout = mem[0] + SHL32(EXTEND32(vin), 15);
-#ifdef FIXED_POINT
-        mem[0] = mem[1] + SHL32(SHL32(-EXTEND32(vin), 15) + MULT16_32_Q15(radius, vout), 1);
-#else
-        mem[0] = mem[1] + 2.0f * (-vin + radius * vout);
-#endif
-        mem[1] = SHL32(EXTEND32(vin), 15) - MULT16_32_Q15(den2, vout);
-        out[i] = SATURATE32(PSHR32(MULT16_32_Q15(radius, vout), 15), 32767);
+
+    for (i = 0; i < len / 4; i++) {
+        spx_word32_t    vout;
+        float32x4_t     vinV = vcvtq_f32_s32(vmovl_s16(vld1_s16(in)));
+        float32x4_t     vinV2 = vmulq_n_f32(vinV, -2.0f);
+        float32x4_t     voutF;
+
+        /* increment gather load indexes */
+       // idx = vaddq_n_s32(idx, stride * 4);
+       in += 4;
+
+        for (int j = 0; j < 4; j++) {
+            vout = mem0 + vinV[j];
+            voutF[j] = vout;
+
+            mem0 = mem1 + vinV2[j] + radius2 * vout;
+            mem1 = vinV[j] - den2 * vout;
+        }
+
+        vst1q_f32(out, vmulq_n_f32(voutF, radius));
+        out += 4;
     }
+
+    mem[1] = mem1;
+    mem[0] = mem0;
 }
 
 #endif
@@ -109,10 +127,23 @@ VISIB_ATTR void power_spectrum_accum(const spx_word16_t * X, spx_word32_t * ps, 
 
 
 #ifdef OVERRIDE_MDF_SPECTRAL_MUL_ACCUM
+
+#define dump_buf(a, buf_sz, wrap, format )                  \
+{                                                           \
+    printf("%s:\n", #a);                                    \
+    for (int i = 0; i < buf_sz; i++)                        \
+        printf(i % wrap == wrap - 1 ? format",\n":format", ", a[i]);  \
+    printf("\n");                                           \
+}
+
 #ifndef FIXED_POINT
+
+#ifndef __ARM_FEATURE_COMPLEX
+
 VISIB_ATTR void spectral_mul_accum(const spx_word16_t * X, const spx_word32_t * Y, spx_word16_t * acc, int N, int M)
 {
     int             i, j;
+
     for (i = 0; i < N; i++)
         acc[i] = 0;
     for (j = 0; j < M; j++) {
@@ -125,7 +156,93 @@ VISIB_ATTR void spectral_mul_accum(const spx_word16_t * X, const spx_word32_t * 
         X += N;
         Y += N;
     }
+
+
 }
+
+#else
+
+VISIB_ATTR void spectral_mul_accum(const spx_word16_t *X,
+        const spx_word32_t *Y, spx_word16_t *acc, int N, int M)
+{
+    int i, j;
+    const spx_word16_t *p_X, *p_Y;
+
+    //printf("M %d N %d\n", M, N);
+
+    for (i = 0; i < N; i++)
+        acc[i] = 0;
+
+    for (j = 0; j < M; j++)
+    {
+
+        spx_word16_t *p_acc;
+
+        acc[0] += X[0] * Y[0];
+        acc[N - 1] += X[N - 1] * Y[N - 1];
+
+        i = (N - 2) / 16;
+        p_X = X + 1;
+        p_Y = Y + 1;
+        p_acc = acc + 1;
+        while (i--)
+        {
+
+            float32x4x4_t vX = vld1q_f32_x4(p_X);
+            float32x4x4_t vY = vld1q_f32_x4(p_Y);
+
+            // Load accumulator values
+            float32x4x4_t vAcc = vld1q_f32_x4(p_acc);
+
+
+            vAcc.val[0] = vcmlaq_f32(vAcc.val[0], vX.val[0], vY.val[0]);
+            vAcc.val[1] = vcmlaq_f32(vAcc.val[1], vX.val[1], vY.val[1]);
+            vAcc.val[2] = vcmlaq_f32(vAcc.val[2], vX.val[2], vY.val[2]);
+            vAcc.val[3] = vcmlaq_f32(vAcc.val[3], vX.val[3], vY.val[3]);
+
+            vAcc.val[0] = vcmlaq_rot90_f32(vAcc.val[0], vX.val[0], vY.val[0]);
+            vAcc.val[1] = vcmlaq_rot90_f32(vAcc.val[1], vX.val[1], vY.val[1]);
+            vAcc.val[2] = vcmlaq_rot90_f32(vAcc.val[2], vX.val[2], vY.val[2]);
+            vAcc.val[3] = vcmlaq_rot90_f32(vAcc.val[3], vX.val[3], vY.val[3]);
+
+            // Store results
+            vst1q_f32_x4(p_acc, vAcc);
+
+            // Update pointers
+            p_X += 16;
+            p_Y += 16;
+            p_acc += 16;
+        }
+
+        i = (((N - 2) / 2) & 7);
+        while (i--)
+        {
+            float32x2_t vX = vld1_f32(p_X);
+            float32x2_t vY = vld1_f32(p_Y);
+
+            // Load accumulator values
+            float32x2_t vAcc = vld1_f32(p_acc);
+
+            vAcc = vcmla_f32(vAcc, vX, vY);
+
+            vAcc = vcmla_rot90_f32(vAcc, vX, vY);
+
+            // Store results
+            vst1_f32(p_acc, vAcc);
+
+            // Update pointers
+            p_X += 2;
+            p_Y += 2;
+            p_acc += 2;
+        }
+
+       // dump_buf(acc, N, 64, "%.1f");
+
+        X += N;
+        Y += N;
+    }
+}
+#endif
 #else
 VISIB_ATTR inline void spectral_mul_accum(const spx_word16_t *X, const spx_word32_t *Y, spx_word16_t *acc, int N, int M)
 {

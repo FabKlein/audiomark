@@ -1,10 +1,16 @@
 cmake_minimum_required(VERSION 3.10.2)
 project(audiomark
 	DESCRIPTION "Firmware for the AudoMark Self-Hosted Benchmark"
-	LANGUAGES C
+	LANGUAGES C CXX
 	VERSION 1.0.0)
 
-set(CMAKE_C_FLAGS "-O2")
+set(CMAKE_C_FLAGS "-O3")
+set(CMAKE_CXX_FLAGS "-O3")
+
+# enable custom CPU tuning
+if(CPU)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=${CPU}")
+endif()
 
 include_directories(lib/speexdsp)
 include_directories(lib/speexdsp/include)
@@ -18,8 +24,14 @@ else()
 	message(FATAL_ERROR "Please define PORT_DIR, e.g. -DPORT_DIR=<path>")
 endif()
 
+# external libraries
+list(APPEND EXTRA_LIBS
+	m)
+
 # For Xiph we are using Float, never Fixed
 add_definitions(-DFLOATING_POINT)
+# CMSIS DSP FFT tables size optimization
+add_definitions(-DREDUCED_FFT_TABSZ)
 # This macro is used extensively in LibSpeeX for function visibility.
 add_definitions(-DEXPORT=)
 # Benchmark system integrator provides heap
@@ -137,12 +149,12 @@ add_executable(audiomark ${EE_SOURCE} ${TH_SOURCE})
 
 if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
 else()
-	target_link_libraries(audiomark m)
-	target_link_libraries(test_abf_f32 m)
-	target_link_libraries(test_aec_f32 m)
-	target_link_libraries(test_anr_f32 m)
-	target_link_libraries(test_mfcc_f32 m)
-	target_link_libraries(test_kws m)
+	target_link_libraries(audiomark ${EXTRA_LIBS})
+	target_link_libraries(test_abf_f32 ${EXTRA_LIBS})
+	target_link_libraries(test_aec_f32 ${EXTRA_LIBS})
+	target_link_libraries(test_anr_f32 ${EXTRA_LIBS})
+	target_link_libraries(test_mfcc_f32 ${EXTRA_LIBS})
+	target_link_libraries(test_kws ${EXTRA_LIBS})
 endif()
 
 add_custom_target(test

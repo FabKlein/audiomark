@@ -1,0 +1,6 @@
+[submodule "ports/arm/libs/external/CMSIS-DSP"]
+	path = ports/arm/libs/external/CMSIS-DSP
+	url = https://github.com/ARM-software/CMSIS-DSP.git
+[submodule "ports/arm/libs/tensorflow"]
+	path = ports/arm/libs/external/tensorflow
+	url = https://github.com/tensorflow/tensorflow.git

@@ -45,6 +45,12 @@
  */
 #include "mdf_opt_helium.c"
 
+#elif defined (__ARM_NEON) && defined(USE_CMSIS_DSP)
+/*
+ * ARM with Neon support
+ */
+#include "mdf_opt_neon.c"
+
 #elif defined (OTHER_ARCH)
 /*
  * More architectures to be added

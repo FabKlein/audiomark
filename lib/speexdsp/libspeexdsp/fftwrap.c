@@ -448,10 +448,14 @@ void spx_fft(void *table, spx_word16_t *in, spx_word16_t *out)
     memcpy(out, scratchOut, (N+2)*sizeof(spx_word16_t));
 #endif
 #else
+
+#if defined(ARM_MATH_NEON)
+    arm_rfft_fast_f32(&t->inst, in, scratchOut, scratchIn, 0);
+#else
     /* copy to avoid RFFT input corruption */
     arm_copy_f32(in, scratchIn, N);
     arm_rfft_fast_f32(&t->inst, scratchIn, scratchOut, 0);
-
+#endif
     /* CMSIS DSP to libspeex float RFFT reshufling and rescaling */
     out[0] = scratchOut[0]/(float)N;
     out[N-1] = scratchOut[1]/(float)N;
@@ -481,9 +485,13 @@ void spx_ifft(void *table, spx_word16_t *in, spx_word16_t *out)
     scratchIn[0] = in[0];
     scratchIn[1] = in[N-1];
 
+#if defined(ARM_MATH_NEON)
+    arm_rfft_fast_f32(&t->inst, scratchIn, out, scratchOut, 1);
+#else
     arm_rfft_fast_f32(&t->inst, scratchIn, scratchOut, 1);
     /* CMSIS RIFFT scale down, need to compensate */
     arm_scale_f32(scratchOut, (float)N, out, N);
+#endif
 #endif
 }
 

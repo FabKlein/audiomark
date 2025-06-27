@@ -16,10 +16,10 @@
 #include "ee_audiomark.h"
 #include "ee_api.h"
 #include "dsp/none.h"
+#include "arm_math.h"
 
 #include "ee_nn.h"
 
-#include "arm_nnfunctions.h"
 
 // These are the input audio files and some scratchpad
 const int16_t downlink_audio[NINPUT_SAMPLES] = {
@@ -112,13 +112,27 @@ th_cfft_init_f32(ee_cfft_f32_t *p_instance, int fft_length)
     return EE_STATUS_OK;
 }
 
+
+#if defined(ARM_MATH_NEON)
+static ee_f32_t fftScratch[1024*2*2];
+#endif
+
 void
 th_cfft_f32(ee_cfft_f32_t *p_instance,
             ee_f32_t      *p_buf,
             uint8_t        ifftFlag,
             uint8_t        bitReverseFlagR)
 {
+#if defined(ARM_MATH_NEON)
+    int fftsz = p_instance->fftLen * 2;
+    ee_f32_t *scratch0 = fftScratch;
+    ee_f32_t *scratch1 = fftScratch + fftsz;
+
+    memcpy((ee_f32_t*)scratch0, p_buf, fftsz*sizeof(ee_f32_t));
+    arm_cfft_f32(p_instance, scratch0, p_buf, scratch1, ifftFlag);
+#else
     arm_cfft_f32(p_instance, p_buf, ifftFlag, bitReverseFlagR);
+#endif
 }
 
 ee_status_t
@@ -164,7 +178,12 @@ th_rfft_f32(ee_rfft_f32_t *p_instance,
             ee_f32_t      *p_out,
             uint8_t        ifftFlag)
 {
+#if defined(ARM_MATH_NEON)
+    ee_f32_t *scratch0 = fftScratch;
+    arm_rfft_fast_f32(p_instance, p_in, p_out, scratch0, ifftFlag);
+#else
     arm_rfft_fast_f32(p_instance, p_in, p_out, ifftFlag);
+#endif
 }
 
 void
@@ -266,6 +285,54 @@ th_mat_vec_mult_f32(ee_matrix_f32_t *p_a, ee_f32_t *p_b, ee_f32_t *p_c)
 
 typedef int8_t input_tensor_t[490];
 typedef int8_t output_tensor_t[12];
+
+#ifdef USE_ARMNN
+
+extern int armnn_init();
+extern int classify_on_armnn(const input_tensor_t in_data, output_tensor_t out_data);
+
+void
+th_nn_init(void) {
+    armnn_init();
+
+}
+
+ee_status_t
+th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
+
+    ee_status_t status = EE_STATUS_ERROR;
+
+    status = classify_on_armnn(in_data, out_data);
+
+    return status;
+
+}
+
+#elif USE_TFL
+
+extern int tflite_nn_init(void);
+extern int classify_on_tflite(const int8_t* in_data, int8_t* out_data);
+
+void
+th_nn_init(void) {
+    tflite_nn_init();
+
+}
+
+ee_status_t
+th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
+
+    ee_status_t status = EE_STATUS_ERROR;
+
+    status = classify_on_tflite(in_data, out_data);
+
+    return status;
+
+}
+
+#else
+
+#include "arm_nnfunctions.h"
 
 #if !defined(TF_INTERPRETER)
 extern const int32_t ds_cnn_s_layer_12_fc_bias[12];
@@ -782,3 +849,5 @@ th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
     return status == ARM_CMSIS_NN_SUCCESS ? EE_STATUS_OK : EE_STATUS_ERROR;
 #endif
 }
+#endif
+
