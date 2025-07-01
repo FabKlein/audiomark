@@ -13,10 +13,144 @@ endif()
 include_directories(${CMSIS_DSP_ROOT}/Include)
 include_directories(${CMSIS_DSP_ROOT}/PrivateInclude)
 
+
+
+option(USE_ARMNN "Enable Arm NN backend" OFF)
+
+# ------------------------------------------------------------
+# ARMNN integration
+# ------------------------------------------------------------
+
+if(USE_ARMNN)
+    message(STATUS "Using ARMNN")
+
+    include(ExternalProject)
+
+    get_filename_component(PORT_ABS ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
+    set(ARMNN_ROOT ${PORT_ABS}/libs/external/armnn)
+
+    get_filename_component(PORT_ABS ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
+    set(ACL_ROOT ${PORT_ABS}/libs/external/acl)
+
+    set(ARMCOMPUTE_ROOT ${PORT_DIR}/libs/external/ComputeLibrary)
+    set(ACL_BUILD_DIR ${CMAKE_BINARY_DIR}/acl-build)
+
+    #set(ML_TARGETS audiomark test_kws )
+
+    include_directories(
+        ${PORT_DIR}/libs/external/armnn/include/
+        ${PORT_DIR}/libs/external/tensorflow
+        ${PORT_DIR}/libs/external/tensorflow/tensorflow/lite
+        ${CMAKE_BINARY_DIR}/flatbuffers/include/
+    )
+
+    add_definitions(
+        -DUSING_ACL_MATH_FUNCTIONS
+        -DUSE_ARMNN
+    )
+
+    set(FLATBUFFERS_INCLUDE_PATH ${PORT_DIR}/libs/external/flatbuffers/include)
+    set(ARMCOMPUTE_BUILD_DIR ${CMAKE_BINARY_DIR}/acl-build)
+    set(ARMNN_BUILD_DIR ${CMAKE_BINARY_DIR}/armnn-build)
+    set(HALF_INCLUDE_DIR ${PORT_DIR}/libs/external/armnn/third-party/half)
+
+    # build ACL
+    ExternalProject_Add(acl_external
+    SOURCE_DIR ${ACL_ROOT}
+    BINARY_DIR ${ACL_BUILD_DIR}
+    INSTALL_DIR ${ACL_ROOT}/install
+    CMAKE_ARGS
+        -DCMAKE_INSTALL_PREFIX=${ACL_ROOT}/install
+        -DCMAKE_BUILD_TYPE=Release
+        -DARM_COMPUTE_ENABLE_OPENMP=OFF
+        -DARM_COMPUTE_BUILD_SHARED_LIB=OFF
+        -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+        -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+         INSTALL_COMMAND ""
+        )
+
+        # build Flatbuffers
+    set(FLATBUFFERS_ROOT ${PORT_ABS}/libs/external/flatbuffers)
+    set(FLATBUFFERS_BUILD_DIR ${CMAKE_BINARY_DIR}/flatbuffers-build)
+
+    ExternalProject_Add(flatbuffers_external
+    SOURCE_DIR ${FLATBUFFERS_ROOT}
+    BINARY_DIR ${FLATBUFFERS_BUILD_DIR}
+    INSTALL_DIR ${FLATBUFFERS_ROOT}/install
+    CMAKE_ARGS
+        -DCMAKE_INSTALL_PREFIX=${ACL_ROOT}/install
+        -DCMAKE_BUILD_TYPE=Release
+        -DFLATBUFFERS_BUILD_SHAREDLIB=OFF
+        -DFLATBUFFERS_BUILD_TESTS=OFF
+        -DFLATBUFFERS_BUILD_FLATC=OFF
+        -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+        INSTALL_COMMAND ""
+        )
+
+    set(FLATBUFFERS_LIBRARY_PATH ${FLATBUFFERS_BUILD_DIR}/libflatbuffers.a)
+
+
+    get_filename_component(PORT_ABS ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
+    set(TF_LITE_SCHEMA_INCLUDE_PATH ${PORT_ABS}/libs/external/tensorflow/tensorflow/lite/schema)
+
+
+    ExternalProject_Add(armnn_external
+    # dependencies
+    DEPENDS acl_external flatbuffers_external
+    SOURCE_DIR ${ARMNN_ROOT}
+    BINARY_DIR ${ARMNN_BUILD_DIR}
+    CMAKE_ARGS
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/armnn-install
+        -DARMCOMPUTENEON=1
+        -DARMNNREF=1
+        -DBUILD_TF_LITE_PARSER=ON
+        -DBUILD_SHARED_LIBS=OFF
+        -DBUILD_TESTS=OFF
+        -DBUILD_UNIT_TESTS=OFF
+        -DFLATBUFFERS_INCLUDE_PATH=${FLATBUFFERS_ROOT}/include/
+        -DARMCOMPUTE_ROOT=${ARMCOMPUTE_ROOT}
+        -DARMCOMPUTE_BUILD_DIR=${ARMCOMPUTE_BUILD_DIR}
+        -DFLATBUFFERS_LIBRARY=${FLATBUFFERS_BUILD_DIR}/libflatbuffers.a
+        -DFLATBUFFERS_LIBRARY_RELEASE=${FLATBUFFERS_BUILD_DIR}/libflatbuffers.a
+        -DFLATBUFFERS_LIBRARY_DEBUG=${FLATBUFFERS_BUILD_DIR}/libflatbuffers.a
+        -DARMCOMPUTE_BUILD_DIR=${ACL_BUILD_DIR}
+        -DARMCOMPUTE_INCLUDE=${ACL_ROOT}
+        -DHALF_INCLUDE=${HALF_INCLUDE_DIR}
+        -DARMCOMPUTE_LIBRARY_RELEASE=${ACL_BUILD_DIR}/libarm_compute.a
+        -DARMCOMPUTE_LIBRARY_DEBUG=${ACL_BUILD_DIR}/libarm_compute.a
+        -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+        -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCMAKE_CXX_FLAGS=-DTF_MAJOR_VERSION=2\ -DTF_MINOR_VERSION=20\ -DTF_PATCH_VERSION=0\ -DTF_VERSION_SUFFIX=\\\"\\\"
+        -DTF_LITE_SCHEMA_INCLUDE_PATH=${TF_LITE_SCHEMA_INCLUDE_PATH}
+        INSTALL_COMMAND ""
+  )
+
+  include_directories(${CMAKE_BINARY_DIR}/armnn-install/include)
+
+
+    list(APPEND EXTRA_LIBS
+        -Wl,--whole-archive
+        ${ARMNN_BUILD_DIR}/libarmnn.a
+        ${ARMNN_BUILD_DIR}/libarmnnUtils.a
+        ${ARMNN_BUILD_DIR}/libarmnnTfLiteParser.a
+        ${ARMNN_BUILD_DIR}/third-party/fmt/libfmt.a
+        ${ARMNN_BUILD_DIR}/profiling/common/src/libpipeCommon.a
+        ${ARMNN_BUILD_DIR}/profiling/client/src/libpipeClient.a
+        -Wl,--no-whole-archive
+        ${FLATBUFFERS_BUILD_DIR}/libflatbuffers.a
+        ${ACL_BUILD_DIR}/libarm_compute.a
+        pthread
+        dl
+    )
+
+
+
+
 # ------------------------------------------------------------
 # TensorFlow Lite integration
 # ------------------------------------------------------------
-if(USE_TFL)
+elseif(USE_TFL)
     message(STATUS "Using TensorFlow Lite")
 
     # Set version macros (needed by release_version.h)

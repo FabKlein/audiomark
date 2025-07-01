@@ -4,3 +4,12 @@
 [submodule "ports/arm/libs/tensorflow"]
 	path = ports/arm/libs/external/tensorflow
 	url = https://github.com/tensorflow/tensorflow.git
+[submodule "ports/arm/libs/external/armnn"]
+	path = ports/arm/libs/external/armnn
+	url = https://github.com/ARM-software/armnn.git
+[submodule "ports/arm/libs/external/acl"]
+	path = ports/arm/libs/external/acl
+	url = https://github.com/ARM-software/ComputeLibrary.git
+[submodule "ports/arm/libs/external/flatbuffers"]
+	path = ports/arm/libs/external/flatbuffers
+	url = git@github.com:google/flatbuffers.git
