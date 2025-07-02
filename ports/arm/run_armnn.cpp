@@ -11,6 +11,7 @@
 
 #define restrict __restrict__
 
+#ifdef USE_ARMNN
 extern "C"
 {
 #include "ee_audiomark.h"
@@ -134,3 +135,5 @@ extern "C"
         return EE_STATUS_OK;
     }
 }
+
+#endif

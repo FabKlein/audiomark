@@ -147,14 +147,32 @@ add_executable(test_kws ${TEST_KWS_SOURCE})
 
 add_executable(audiomark ${EE_SOURCE} ${TH_SOURCE})
 
+set(ALL_TARGETS
+	audiomark
+	test_kws
+	test_abf_f32
+	test_aec_f32
+	test_anr_f32
+	test_mfcc_f32
+)
+
+if(USE_ARMNN)
+	#add_dependencies(test_kws audiomark armnn_external)
+	foreach(tgt IN LISTS ALL_TARGETS)
+		if(TARGET ${tgt})
+			add_dependencies(${tgt} armnn_external)
+		endif()
+	endforeach()
+endif()
+
 if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
 else()
-	target_link_libraries(audiomark ${EXTRA_LIBS})
-	target_link_libraries(test_abf_f32 ${EXTRA_LIBS})
-	target_link_libraries(test_aec_f32 ${EXTRA_LIBS})
-	target_link_libraries(test_anr_f32 ${EXTRA_LIBS})
-	target_link_libraries(test_mfcc_f32 ${EXTRA_LIBS})
-	target_link_libraries(test_kws ${EXTRA_LIBS})
+	foreach(tgt IN LISTS ALL_TARGETS)
+		if(TARGET ${tgt})
+			target_link_libraries(${tgt} ${EXTRA_LIBS})
+		endif()
+	endforeach()
+
 endif()
 
 add_custom_target(test

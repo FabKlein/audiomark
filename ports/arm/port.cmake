@@ -15,7 +15,13 @@ include_directories(${CMSIS_DSP_ROOT}/PrivateInclude)
 
 
 
+# Cortex-A NN backend
 option(USE_ARMNN "Enable Arm NN backend" OFF)
+option(USE_TFL "Enable TensorFlow Lite backend" OFF)
+
+if(USE_TFL AND USE_ARMNN)
+    message(FATAL_ERROR "USE_TFL and USE_ARMNN cannot both be ON")
+endif()
 
 # ------------------------------------------------------------
 # ARMNN integration
@@ -124,9 +130,9 @@ if(USE_ARMNN)
         -DCMAKE_CXX_FLAGS=-DTF_MAJOR_VERSION=2\ -DTF_MINOR_VERSION=20\ -DTF_PATCH_VERSION=0\ -DTF_VERSION_SUFFIX=\\\"\\\"
         -DTF_LITE_SCHEMA_INCLUDE_PATH=${TF_LITE_SCHEMA_INCLUDE_PATH}
         INSTALL_COMMAND ""
-  )
+    )
 
-  include_directories(${CMAKE_BINARY_DIR}/armnn-install/include)
+    include_directories(${CMAKE_BINARY_DIR}/armnn-install/include)
 
 
     list(APPEND EXTRA_LIBS
@@ -160,6 +166,13 @@ elseif(USE_TFL)
         -DTF_PATCH_VERSION=0
         -DTF_VERSION_SUFFIX=""
         )
+
+    # Check if using Clang and add --stdlib=libc++
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        #add_compile_options(--stdlib=libc++)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --stdlib=libc++")
+        add_link_options(--stdlib=libc++)
+    endif()
 
     add_subdirectory(${PORT_DIR}/libs/external/tensorflow/tensorflow/lite EXCLUDE_FROM_ALL)
 
