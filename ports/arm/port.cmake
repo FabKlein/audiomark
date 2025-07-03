@@ -55,6 +55,13 @@ if(USE_ARMNN)
         -DUSE_ARMNN
     )
 
+
+
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_link_options(-lstdc++)
+        set(CMAKE_EXE_LINKER_FLAGS "-static -static-libstdc++ -static-libgcc")
+    endif()
+
     set(FLATBUFFERS_INCLUDE_PATH ${PORT_DIR}/libs/external/flatbuffers/include)
     set(ARMCOMPUTE_BUILD_DIR ${CMAKE_BINARY_DIR}/acl-build)
     set(ARMNN_BUILD_DIR ${CMAKE_BINARY_DIR}/armnn-build)
@@ -159,19 +166,44 @@ if(USE_ARMNN)
 elseif(USE_TFL)
     message(STATUS "Using TensorFlow Lite")
 
+
+
+    include(CheckCXXCompilerFlag)
+
+    if(CMAKE_CROSSCOMPILING)
+        message(STATUS "Cross-compiling: building host flatc tool for the build machine")
+
+        # Host build directory for flatc
+        set(FLATBUFFERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ports/arm/libs/external/flatbuffers")
+        set(FLATBUFFERS_HOST_BUILD_DIR "${CMAKE_BINARY_DIR}/flatbuffers-host-build")
+
+        # Build host version of flatc using native compiler
+        execute_process(COMMAND ${CMAKE_COMMAND} -S "${FLATBUFFERS_DIR}" -B "${FLATBUFFERS_HOST_BUILD_DIR}" -DFLATBUFFERS_BUILD_TESTS=OFF)
+        execute_process(COMMAND ${CMAKE_COMMAND} --build "${FLATBUFFERS_HOST_BUILD_DIR}" --target flatc -j)
+
+        # Tell TFLite where to find the host-built flatc
+#        set(TFLITE_HOST_TOOLS_DIR "${FLATBUFFERS_HOST_BUILD_DIR}")
+        set(TFLITE_HOST_TOOLS_DIR "${CMAKE_BINARY_DIR}/flatbuffers-host-build" CACHE PATH "Host path to flatc compiler")
+    endif()
+
+
+
     # Set version macros (needed by release_version.h)
     add_definitions(
         -DTF_MAJOR_VERSION=2
         -DTF_MINOR_VERSION=20
         -DTF_PATCH_VERSION=0
         -DTF_VERSION_SUFFIX=""
+        -DTFLITE_HOST_TOOLS_DIR=${TFLITE_HOST_TOOLS_DIR}
         )
 
-    # Check if using Clang and add --stdlib=libc++
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         #add_compile_options(--stdlib=libc++)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --stdlib=libc++")
         add_link_options(--stdlib=libc++)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_link_options(-lstdc++)
+        set(CMAKE_EXE_LINKER_FLAGS "-static -static-libstdc++ -static-libgcc")
     endif()
 
     add_subdirectory(${PORT_DIR}/libs/external/tensorflow/tensorflow/lite EXCLUDE_FROM_ALL)
