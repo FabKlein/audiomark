@@ -157,7 +157,6 @@ set(ALL_TARGETS
 )
 
 if(USE_ARMNN)
-	#add_dependencies(test_kws audiomark armnn_external)
 	foreach(tgt IN LISTS ALL_TARGETS)
 		if(TARGET ${tgt})
 			add_dependencies(${tgt} armnn_external)
@@ -172,7 +171,6 @@ else()
 			target_link_libraries(${tgt} ${EXTRA_LIBS})
 		endif()
 	endforeach()
-
 endif()
 
 add_custom_target(test

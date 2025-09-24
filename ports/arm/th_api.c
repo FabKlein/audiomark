@@ -308,7 +308,7 @@ th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
 
 }
 
-#elif USE_TFL
+#elif defined(USE_TFL) || defined(USE_IMX93)
 
 extern int tflite_nn_init(void);
 extern int classify_on_tflite(const int8_t* in_data, int8_t* out_data);

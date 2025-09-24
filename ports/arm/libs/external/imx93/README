@@ -1,0 +1,9 @@
+libs built with:
+- https://github.com/nxp-imx/tflite-ethosu-delegate-imx.git
+- tag lf-6.12.20-2.0.0
+
+Uses TensorFlow 2.18
+
+Compiler : LLVM21 
+
+

@@ -15,12 +15,20 @@ include_directories(${CMSIS_DSP_ROOT}/PrivateInclude)
 
 
 
-# Cortex-A NN backend
 option(USE_ARMNN "Enable Arm NN backend" OFF)
+option(USE_IMX93 "Use NXP i.MX93 TFLite fork and Ethos-U delegate" OFF)
 option(USE_TFL "Enable TensorFlow Lite backend" OFF)
 
-if(USE_TFL AND USE_ARMNN)
-    message(FATAL_ERROR "USE_TFL and USE_ARMNN cannot both be ON")
+# only one can be ON
+math(EXPR BACKEND_COUNT
+    "${USE_ARMNN} + ${USE_IMX93} + ${USE_TFL}"
+)
+
+if(BACKEND_COUNT GREATER 1)
+    message(FATAL_ERROR
+        "Only one backend can be enabled. "
+        "Currently set: USE_ARMNN=${USE_ARMNN}, USE_IMX93=${USE_IMX93}, USE_TFL=${USE_TFL}"
+    )
 endif()
 
 # ------------------------------------------------------------
@@ -54,8 +62,6 @@ if(USE_ARMNN)
         -DUSING_ACL_MATH_FUNCTIONS
         -DUSE_ARMNN
     )
-
-
 
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         add_link_options(-lstdc++)
@@ -137,9 +143,9 @@ if(USE_ARMNN)
         -DCMAKE_CXX_FLAGS=-DTF_MAJOR_VERSION=2\ -DTF_MINOR_VERSION=20\ -DTF_PATCH_VERSION=0\ -DTF_VERSION_SUFFIX=\\\"\\\"
         -DTF_LITE_SCHEMA_INCLUDE_PATH=${TF_LITE_SCHEMA_INCLUDE_PATH}
         INSTALL_COMMAND ""
-    )
+  )
 
-    include_directories(${CMAKE_BINARY_DIR}/armnn-install/include)
+  include_directories(${CMAKE_BINARY_DIR}/armnn-install/include)
 
 
     list(APPEND EXTRA_LIBS
@@ -166,45 +172,13 @@ if(USE_ARMNN)
 elseif(USE_TFL)
     message(STATUS "Using TensorFlow Lite")
 
-
-
-    include(CheckCXXCompilerFlag)
-
-    if(CMAKE_CROSSCOMPILING)
-        message(STATUS "Cross-compiling: building host flatc tool for the build machine")
-
-        # Host build directory for flatc
-        set(FLATBUFFERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ports/arm/libs/external/flatbuffers")
-        set(FLATBUFFERS_HOST_BUILD_DIR "${CMAKE_BINARY_DIR}/flatbuffers-host-build")
-
-        # Build host version of flatc using native compiler
-        execute_process(COMMAND ${CMAKE_COMMAND} -S "${FLATBUFFERS_DIR}" -B "${FLATBUFFERS_HOST_BUILD_DIR}" -DFLATBUFFERS_BUILD_TESTS=OFF)
-        execute_process(COMMAND ${CMAKE_COMMAND} --build "${FLATBUFFERS_HOST_BUILD_DIR}" --target flatc -j)
-
-        # Tell TFLite where to find the host-built flatc
-#        set(TFLITE_HOST_TOOLS_DIR "${FLATBUFFERS_HOST_BUILD_DIR}")
-        set(TFLITE_HOST_TOOLS_DIR "${CMAKE_BINARY_DIR}/flatbuffers-host-build" CACHE PATH "Host path to flatc compiler")
-    endif()
-
-
-
     # Set version macros (needed by release_version.h)
     add_definitions(
         -DTF_MAJOR_VERSION=2
         -DTF_MINOR_VERSION=20
         -DTF_PATCH_VERSION=0
         -DTF_VERSION_SUFFIX=""
-        -DTFLITE_HOST_TOOLS_DIR=${TFLITE_HOST_TOOLS_DIR}
         )
-
-    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        #add_compile_options(--stdlib=libc++)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --stdlib=libc++")
-        add_link_options(--stdlib=libc++)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_link_options(-lstdc++)
-        set(CMAKE_EXE_LINKER_FLAGS "-static -static-libstdc++ -static-libgcc")
-    endif()
 
     add_subdirectory(${PORT_DIR}/libs/external/tensorflow/tensorflow/lite EXCLUDE_FROM_ALL)
 
