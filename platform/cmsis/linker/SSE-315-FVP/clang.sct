@@ -95,8 +95,12 @@ PHDRS
 SECTIONS
 {
 	.itcm : {
-    	/**(.text.arm_cfft_*)*/
-		* (.text.arm_*)
+		/* ITCM is only 32 KiB. Keep the AudioMark CMSIS-DSP floating-point
+		 * kernels here, but do not catch all .text.arm_* sections: CMSIS-NN
+		 * and the CLANG runtime also use that prefix and can overflow ITCM.
+		 * Unmatched arm_* sections fall through to the FSRAM .text. */
+		* (.text.arm_*_f32)
+		* (__lcxx_override)
         } >ITCM AT>ITCM :itcm
 
 	.dtcm : {
@@ -304,16 +308,20 @@ SECTIONS
 	PROVIDE( end = __bss_end );
 	PROVIDE( __bss_size = __bss_end - __bss_start );
 
-	/* Make the rest of memory available for heap storage */
+	/* Make the rest of memory available for heap storage without overlapping
+	 * the fixed stack slot when the image grows close to the RAM limit. */
 	PROVIDE (__heap_start = __end);
+	PROVIDE (__heap_limit = ORIGIN(ISRAM) + LENGTH(ISRAM) - __STACKSEAL_SIZE - STACK_SIZE);
 #ifdef HEAP_SIZE
-	PROVIDE (__heap_end = __heap_start + HEAP_SIZE);
+	PROVIDE (__heap_end = MIN(__heap_start + HEAP_SIZE, __heap_limit));
+	PROVIDE (__heap_size = __heap_end - __heap_start);
 #else
-	PROVIDE (__heap_end = __stack - STACK_SIZE);
-	PROVIDE (HEAP_SIZE = __heap_end - __heap_start);
+	PROVIDE (__heap_end = __heap_limit);
+	PROVIDE (__heap_size = __heap_end - __heap_start);
+	PROVIDE (HEAP_SIZE = __heap_size);
 #endif
 	.heap (NOLOAD) : {
-		. += HEAP_SIZE;
+		. += __heap_size;
 	} >ISRAM :ram
 
 	/* Define a stack region to make sure it fits in memory */

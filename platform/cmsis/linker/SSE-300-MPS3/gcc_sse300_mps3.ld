@@ -336,19 +336,24 @@ SECTIONS
 	PROVIDE( __end__ = __bss_end );
 	PROVIDE( __bss_size = __bss_end - __bss_start );
 
-	/* Make the rest of memory available for heap storage */
+	/* Make the rest of memory available for heap storage. Keep the heap from
+	 * overlapping the fixed stack slot when small test images grow slightly
+	 * differently with GCC. */
 	PROVIDE (__heap_start = __end);
+	PROVIDE (__heap_limit = ORIGIN(DTCM) + LENGTH(DTCM) - __STACKSEAL_SIZE - STACK_SIZE);
 #ifdef HEAP_SIZE
-	PROVIDE (__heap_end = __heap_start + HEAP_SIZE);
+	PROVIDE (__heap_end = MIN(__heap_start + HEAP_SIZE, __heap_limit));
+	PROVIDE (__heap_size = __heap_end - __heap_start);
 
 #else
-	PROVIDE (__heap_end = __stack - STACK_SIZE);
-	PROVIDE (HEAP_SIZE = __heap_end - __heap_start);
+	PROVIDE (__heap_end = __heap_limit);
+	PROVIDE (__heap_size = __heap_end - __heap_start);
+	PROVIDE (HEAP_SIZE = __heap_size);
 #endif
 PROVIDE (__HeapLimit = __heap_end);
 
 	.heap (NOLOAD) : {
-		. += HEAP_SIZE;
+		. += __heap_size;
 	} >DTCM :ram
 
 	/* Define a stack region to make sure it fits in memory */

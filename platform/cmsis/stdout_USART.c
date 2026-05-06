@@ -33,6 +33,13 @@
 
 #include "Driver_USART.h"
 
+#if defined(SSE_320_FPGA)
+#ifndef CMSIS_device_header
+#include "RTE_Components.h"
+#endif
+#include CMSIS_device_header
+#endif
+
 //-------- <<< Use Configuration Wizard in Context Menu >>> --------------------
 
 // <h>STDOUT USART Interface
@@ -58,7 +65,6 @@
 extern ARM_DRIVER_USART  USART_Driver_(USART_DRV_NUM);
 #define ptrUSART       (&USART_Driver_(USART_DRV_NUM))
 
-
 /**
   Initialize stdout
 
@@ -73,16 +79,25 @@ int stdout_init (void) {
   status = ptrUSART->PowerControl(ARM_POWER_FULL);
   if (status != ARM_DRIVER_OK) return (-1);
 
+#if defined(SSE_320_FPGA)
+  /* TODO : verify if still needed */
+  status = ptrUSART->Control(ARM_USART_MODE_ASYNCHRONOUS, USART_BAUDRATE);
+#else
   status = ptrUSART->Control(ARM_USART_MODE_ASYNCHRONOUS |
                              ARM_USART_DATA_BITS_8       |
                              ARM_USART_PARITY_NONE       |
                              ARM_USART_STOP_BITS_1       |
                              ARM_USART_FLOW_CONTROL_NONE,
                              USART_BAUDRATE);
+#endif
   if (status != ARM_DRIVER_OK) return (-1);
 
   status = ptrUSART->Control(ARM_USART_CONTROL_TX, 1);
   if (status != ARM_DRIVER_OK) return (-1);
+
+#if defined(SSE_320_FPGA)
+  __enable_irq();
+#endif
 
   return (0);
 }

@@ -77,6 +77,33 @@ layer:
         - +Ethos-Corstone-315
         - +Corstone-315
 
+    - script: ./linker/SSE-320-FVP/ac6.sct
+      for-context:
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
+        - +MPS4-Corstone-320
+      for-compiler: AC6
+
+    - script: ./linker/SSE-320-FVP/clang.sct
+      for-context:
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
+        - +MPS4-Corstone-320
+      for-compiler: CLANG
+
+    - script: ./linker/SSE-320-FVP/gcc.ld
+      for-context:
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
+        - +MPS4-Corstone-320
+      for-compiler: GCC
+
+    - regions: ./linker/SSE-320-FVP/region_defs.h
+      for-context:
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
+        - +MPS4-Corstone-320
+
 
   components:
     - component: Device:Startup&C Startup
@@ -87,6 +114,9 @@ layer:
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
         - +Ethos-Corstone-315
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: ARM::Device:Definition
       for-context:
@@ -96,6 +126,9 @@ layer:
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
         - +Ethos-Corstone-315
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: ARM::Device:Startup&C Startup
       for-context:
@@ -105,6 +138,9 @@ layer:
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
         - +Ethos-Corstone-315
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: ARM::Device:Native Driver:Timeout
       for-context:
@@ -113,6 +149,9 @@ layer:
         - +Ethos-MPS3-Corstone-300
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: ARM::Device:Native Driver:SysCounter
       for-context:
@@ -122,6 +161,9 @@ layer:
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
         - +Ethos-Corstone-315
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: ARM::Device:Native Driver:SysTimer
       for-context:
@@ -131,3 +173,6 @@ layer:
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
         - +Ethos-Corstone-315
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA

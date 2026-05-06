@@ -16,6 +16,7 @@
 #include "ee_audiomark.h"
 #include "ee_api.h"
 #include "dsp/none.h"
+//#include <string.h>
 
 #include "ee_nn.h"
 
@@ -216,6 +217,71 @@ void
 th_add_f32(ee_f32_t *p_a, ee_f32_t *p_b, ee_f32_t *p_c, uint32_t len)
 {
     arm_add_f32(p_a, p_b, p_c, len);
+}
+
+static int16_t
+th_sat_s16(int32_t value)
+{
+    if (value > 32767)
+    {
+        return 32767;
+    }
+    if (value < -32768)
+    {
+        return -32768;
+    }
+    return (int16_t)value;
+}
+
+void
+th_add_mix_sat_s16(int16_t *p_a, int16_t *p_b, const int16_t *p_c, size_t len)
+{
+#if defined(ARM_MATH_MVEI)
+    uint32_t blk_cnt = (uint32_t)len;
+    while ((int32_t)blk_cnt > 0)
+    {
+        const mve_pred16_t p = vctp16q(blk_cnt);
+        const q15x8_t c = vld1q_z(p_c, p);
+        vst1q_p(p_a, vqaddq_s16(vld1q_z(p_a, p), c), p);
+        vst1q_p(p_b, vqaddq_s16(vld1q_z(p_b, p), c), p);
+        p_a += 8;
+        p_b += 8;
+        p_c += 8;
+        blk_cnt -= 8;
+    }
+#elif defined(ARM_MATH_DSP)
+    q15_t *a_read = p_a;
+    q15_t *b_read = p_b;
+    q15_t *a_write = p_a;
+    q15_t *b_write = p_b;
+    const q15_t *c_read = p_c;
+    size_t blk_cnt = len >> 1;
+
+    while (blk_cnt > 0U)
+    {
+        const uint32_t c = (uint32_t)read_q15x2_ia(&c_read);
+        const uint32_t a = __QADD16((uint32_t)read_q15x2_ia(&a_read), c);
+        const uint32_t b = __QADD16((uint32_t)read_q15x2_ia(&b_read), c);
+
+        write_q15x2_ia(&a_write, (q31_t)a);
+        write_q15x2_ia(&b_write, (q31_t)b);
+
+        --blk_cnt;
+    }
+
+    p_a = a_write;
+    p_b = b_write;
+    p_c = c_read;
+
+    if ((len & 1U) != 0U)
+    {
+        *p_a = th_sat_s16((int32_t)*p_a + *p_c);
+        *p_b = th_sat_s16((int32_t)*p_b + *p_c);
+    }
+#else
+    arm_add_q15(p_a, p_c, p_a, (uint32_t)len);
+    arm_add_q15(p_b, p_c, p_b, (uint32_t)len);
+#endif
 }
 
 void

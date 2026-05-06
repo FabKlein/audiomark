@@ -45,16 +45,25 @@
 /* TCMs */
 #define DTCM_BASE  0x30000000
 #define DTCM_SIZE  0x00008000
-#define ITCM_BASE  0x10000000
-#define ITCM_SIZE  0x00008000
 
-/* FPGA SRAM */
-#define FSRAM_BASE S_ROM_ALIAS
-#define FSRAM_SIZE TOTAL_S_ROM_SIZE
+/* FVP image layout.
+ * Match the working AC6/CLANG layout: keep only the boot vectors at the
+ * secure boot alias, and place the application image in BRAM.
+ */
+#define BOOT_BASE  S_ROM_ALIAS
+#define BOOT_SIZE  0x00010000
+#define BRAM_BASE  0x12000000
+#define BRAM_SIZE  0x00200000
 
 /* Internal  SRAM */
 #define ISRAM_BASE S_RAM_ALIAS
 #define ISRAM_SIZE TOTAL_S_RAM_SIZE
+
+#ifndef HEAP_SIZE
+#define HEAP_SIZE 0x00097000
+#endif
+#undef STACK_SIZE
+#define STACK_SIZE 0x00008000
 
 #if defined (__FVP__) && (__FVP__ == 1)
 #define DDR_BASE  0x31000000
@@ -70,52 +79,66 @@
  *----------------------------------------------------------------------------*/
 MEMORY
 {
-	FSRAM (rx!w)  : ORIGIN = FSRAM_BASE, LENGTH = FSRAM_SIZE
-	ITCM  (rx!w)  : ORIGIN = ITCM_BASE, LENGTH = ITCM_SIZE
+  BOOT  (rx!w)  : ORIGIN = BOOT_BASE, LENGTH = BOOT_SIZE
+  BRAM  (rwx)   : ORIGIN = BRAM_BASE, LENGTH = BRAM_SIZE
+#if __ROM1_SIZE > 0
+  ROM1  (rx!w)  : ORIGIN = __ROM1_BASE, LENGTH = __ROM1_SIZE
+#endif
+#if __ROM2_SIZE > 0
+  ROM2  (rx!w)  : ORIGIN = __ROM2_BASE, LENGTH = __ROM2_SIZE
+#endif
+#if __ROM3_SIZE > 0
+  ROM3  (rx!w)  : ORIGIN = __ROM3_BASE, LENGTH = __ROM3_SIZE
+#endif
 
-  	DTCM  (w!rx) : ORIGIN = DTCM_BASE, LENGTH = DTCM_SIZE
-  	ISRAM (w!rx) : ORIGIN = ISRAM_BASE,  LENGTH = ISRAM_SIZE
-  	DDR   (w!rx) : ORIGIN = DDR_BASE,  LENGTH = DDR_SIZE
+  DTCM  (w!rx) : ORIGIN = DTCM_BASE, LENGTH = DTCM_SIZE
+  ISRAM (w!rx) : ORIGIN = ISRAM_BASE,  LENGTH = ISRAM_SIZE
+  DDR   (w!rx) : ORIGIN = DDR_BASE,  LENGTH = DDR_SIZE
+
+#if __RAM2_SIZE > 0
+  RAM2  (w!rx) : ORIGIN = __RAM2_BASE, LENGTH = __RAM2_SIZE
+#endif
+#if __RAM3_SIZE > 0
+  RAM3  (w!rx) : ORIGIN = __RAM3_BASE, LENGTH = __RAM3_SIZE
+#endif
 }
 
 ENTRY(Reset_Handler)
 
 PHDRS
 {
-	itcm PT_LOAD;
-	dtcm PT_LOAD;
-	text PT_LOAD;
-	ram PT_LOAD;
-	ram_init PT_LOAD;
+	boot PT_LOAD;
+	bram_ro PT_LOAD;
+	bram_rw PT_LOAD;
 	isram PT_LOAD;
-	ddr PT_LOAD;
+	dtcm PT_LOAD;
 	tls PT_TLS;
 }
 
 SECTIONS
 {
 	.itcm : {
-		/* ITCM is only 32 KiB. Keep the AudioMark CMSIS-DSP floating-point
-		 * kernels here, but do not catch all .text.arm_* sections: CMSIS-NN
-		 * and the CLANG runtime also use that prefix and can overflow ITCM.
-		 * Unmatched arm_* sections fall through to the FSRAM .text. */
+		/* Keep the AudioMark CMSIS-DSP floating-point kernels near the main
+		 * application image. Do not catch all .text.arm_* sections: CMSIS-NN
+		 * also uses that prefix and GCC 15 emits enough NN code to grow this
+		 * area substantially.
+		 */
 		* (.text.arm_*_f32)
-		* (__lcxx_override)
-        } >ITCM AT>ITCM :itcm
+        } >BRAM AT>BRAM :bram_ro
 
 	.dtcm : {
     	/**(.text.arm_cfft_*)*/
 		* (.rodata.ee_mfcc_*)
 		* (.rodata.w_hanning_*)
 		*CommonTables* (.rodata*)
-        } >DTCM AT>DTCM :dtcm
+        } >BRAM AT>BRAM :bram_ro
 
 	.init : {
 		KEEP (*(.vectors))
 		KEEP (*(.text.init.enter))
 		KEEP (*(.data.init.enter))
 		KEEP (*(SORT_BY_NAME(.init) SORT_BY_NAME(.init.*)))
-	} >FSRAM AT>FSRAM :text
+	} >BOOT AT>BOOT :boot
 
 
 
@@ -163,19 +186,19 @@ SECTIONS
 		KEEP (*(.fini_array .dtors))
 		PROVIDE_HIDDEN ( __fini_array_end = . );
 
-	} >FSRAM AT>FSRAM :text
+	} >BRAM AT>BRAM :bram_ro
 
 #if defined (__ARM_FEATURE_CMSE) && (__ARM_FEATURE_CMSE == 3U)
 	.veneers :
 	{
 		. = ALIGN(32);
 		KEEP(*(.gnu.sgstubs))
-	} > FSRAM AT>FSRAM :text
+	} > BRAM AT>BRAM :bram_ro
 #endif
 
 	.toc : {
 		*(.toc .toc.*)
-	} >FSRAM AT>FSRAM :text
+	} >BRAM AT>BRAM :bram_ro
 
 	/* additional sections when compiling with C++ exception support */
 
@@ -183,7 +206,7 @@ SECTIONS
 		*(.gcc_except_table *.gcc_except_table.*)
 		KEEP (*(.eh_frame .eh_frame.*))
 		*(.ARM.extab* .gnu.linkonce.armextab.*)
-	} >FSRAM AT>FSRAM :text
+	} >BRAM AT>BRAM :bram_ro
 
 	.except_unordered : {
 		. = ALIGN(8);
@@ -191,10 +214,46 @@ SECTIONS
 		PROVIDE(__exidx_start = .);
 		*(.ARM.exidx*)
 		PROVIDE(__exidx_end = .);
-	} >FSRAM AT>FSRAM :text
+	} >BRAM AT>BRAM :bram_ro
+
+#if 1
+  .copy.table :
+  {
+    . = ALIGN(4);
+    __copy_table_start__ = .;
+
+    LONG (LOADADDR(.data))
+    LONG (ADDR(.data))
+    LONG (SIZEOF(.data) / 4)
+
+    /* Add each additional data section here */
+/*
+    LONG (LOADADDR(.data2))
+    LONG (ADDR(.data2))
+    LONG (SIZEOF(.data2) / 4)
+*/
+    __copy_table_end__ = .;
+  } > BRAM :bram_ro
 
 
+  .zero.table :
+  {
+    . = ALIGN(4);
+    __zero_table_start__ = .;
 
+/*  .bss initialization to zero is already done during C Run-Time Startup.
+    LONG (ADDR(.bss))
+    LONG (SIZEOF(.bss) / 4)
+*/
+
+    /* Add each additional bss section here */
+/*
+    LONG (ADDR(.bss2))
+    LONG (SIZEOF(.bss2) / 4)
+*/
+    __zero_table_end__ = .;
+  } > BRAM :bram_ro
+#endif
 
 	/*
 	 * Data values which are preserved across reset
@@ -204,7 +263,22 @@ SECTIONS
 		KEEP(*(SORT_BY_NAME(.preserve.*)))
 		KEEP(*(.preserve))
 		PROVIDE(__preserve_end__ = .);
-	} >ISRAM AT>ISRAM :ram
+	} >BRAM AT>BRAM :bram_rw
+
+    .sram_model : {
+        /* Keep Ethos-U constants in internal SRAM for the FVP SRAM-only flow.
+         * This intentionally avoids a DDR load segment.
+         */
+        . = ALIGN(16);
+        * (ifm)
+        . = ALIGN(16);
+        * (nn_model)
+        . = ALIGN(16);
+        * (labels)
+        . = ALIGN(16);
+        * (activation_buf_dram)
+        . = ALIGN(16);
+    } > ISRAM : isram
 
     .isram (NOLOAD):     {
         /* Cache area (if used) */
@@ -214,8 +288,6 @@ SECTIONS
         /* memory mode sram only or shared sram */
         *(.bss.NoInit.activation_buf_sram)
     } > ISRAM : isram
-
-
 
 
 	.data :  {
@@ -229,7 +301,7 @@ SECTIONS
 		PROVIDE( __global_pointer$ = . + 0x800 );
 		*(.sdata .sdata.* .sdata2.*)
 		*(.gnu.linkonce.s.*)
-	} >ISRAM AT>FSRAM :ram_init
+	} >BRAM AT>BRAM :bram_rw
 	PROVIDE(__data_start = ADDR(.data));
 	PROVIDE(__data_source = LOADADDR(.data));
 
@@ -245,7 +317,7 @@ SECTIONS
 		*(.tdata .tdata.* .gnu.linkonce.td.*)
 		PROVIDE(__data_end = .);
 		PROVIDE(__tdata_end = .);
-	} >ISRAM AT>FSRAM :tls :ram_init
+	} >BRAM AT>BRAM :tls :bram_rw
 	PROVIDE( __tls_base = ADDR(.tdata));
 	PROVIDE( __tdata_start = ADDR(.tdata));
 	PROVIDE( __tdata_source = LOADADDR(.tdata) );
@@ -265,7 +337,7 @@ SECTIONS
 		*(.tcommon)
 		PROVIDE( __tls_end = . );
 		PROVIDE( __tbss_end = . );
-	} >ISRAM AT>ISRAM :tls :ram
+	} >DTCM AT>DTCM :tls :dtcm
 	PROVIDE( __bss_start = ADDR(.tbss));
 	PROVIDE( __tbss_start = ADDR(.tbss));
 	PROVIDE( __tbss_offset = ADDR(.tbss) - ADDR(.tdata) );
@@ -288,10 +360,12 @@ SECTIONS
 	.tbss_space (NOLOAD) : {
 		. = ADDR(.tbss);
 		. = . + SIZEOF(.tbss);
-	} >ISRAM AT>ISRAM :ram
+	} >BRAM AT>BRAM :bram_rw
 	*/
 
 	.bss (NOLOAD) : {
+    . = ALIGN(4);
+    __bss_start__ = .;
 		*(.sbss*)
 		*(.gnu.linkonce.sb.*)
 		*(.bss .bss.*)
@@ -301,42 +375,47 @@ SECTIONS
 		/* Align the heap */
 		. = ALIGN(8);
 		__bss_end = .;
-	} >ISRAM AT>ISRAM :ram
+    __bss_end__ = .;
+
+	} >BRAM AT>BRAM :bram_rw
 	PROVIDE( __non_tls_bss_start = ADDR(.bss) );
 	PROVIDE( __end = __bss_end );
 	PROVIDE( _end = __bss_end );
 	PROVIDE( end = __bss_end );
+	PROVIDE( __end__ = __bss_end );
 	PROVIDE( __bss_size = __bss_end - __bss_start );
 
-	/* Make the rest of memory available for heap storage without overlapping
-	 * the fixed stack slot when the image grows close to the RAM limit. */
+	/* Make the rest of memory available for heap storage */
 	PROVIDE (__heap_start = __end);
-	PROVIDE (__heap_limit = ORIGIN(ISRAM) + LENGTH(ISRAM) - __STACKSEAL_SIZE - STACK_SIZE);
 #ifdef HEAP_SIZE
-	PROVIDE (__heap_end = MIN(__heap_start + HEAP_SIZE, __heap_limit));
-	PROVIDE (__heap_size = __heap_end - __heap_start);
+	PROVIDE (__heap_end = __heap_start + HEAP_SIZE);
+
 #else
-	PROVIDE (__heap_end = __heap_limit);
-	PROVIDE (__heap_size = __heap_end - __heap_start);
-	PROVIDE (HEAP_SIZE = __heap_size);
+	PROVIDE (__heap_end = __stack - STACK_SIZE);
+	PROVIDE (HEAP_SIZE = __heap_end - __heap_start);
 #endif
+PROVIDE (__HeapLimit = __heap_end);
+
 	.heap (NOLOAD) : {
-		. += __heap_size;
-	} >ISRAM :ram
+		. += HEAP_SIZE;
+	} >BRAM :bram_rw
 
 	/* Define a stack region to make sure it fits in memory */
-	PROVIDE(__stack = ORIGIN(ISRAM) + LENGTH(ISRAM) - __STACKSEAL_SIZE);
+	PROVIDE(__stack = ORIGIN(DTCM) + LENGTH(DTCM) - __STACKSEAL_SIZE);
 	PROVIDE(__stack_limit = __stack - STACK_SIZE);
+
+	PROVIDE(__StackTop = __stack);
+	PROVIDE(__StackLimit = __stack_limit);
 	.stack (__stack_limit) (NOLOAD) : {
 		. += STACK_SIZE;
-	} >ISRAM :ram
+	} >DTCM :dtcm
 
 #if __STACKSEAL_SIZE > 0
 	PROVIDE(__stack_seal = __stack);
   	.stackseal (__stack) (NOLOAD) :
   	{
     	. += __STACKSEAL_SIZE;
-  	} >ISRAM :ram
+  	} >DTCM :dtcm
 #endif
 
 	/* Throw away C++ exception handling information */
@@ -352,20 +431,6 @@ SECTIONS
 
 	*/
 
-
-    .ddr : {
-        /* nn model's baked in input matrices */
-        * (ifm)
-
-        /* nn model's default space */
-        * (nn_model)
-
-        /* labels */
-        * (labels)
-
-        /* activation buffers a.k.a tensor arena when memory mode dedicated sram */
-        * (activation_buf_dram)
-    } > DDR : ddr
 
 	/* Stabs debugging sections.  */
 	.stab          0 : { *(.stab) }

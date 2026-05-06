@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "ee_audiomark.h"
 
@@ -33,6 +34,85 @@
 #include <assert.h>
 
 
+#if defined __arm__
+#define STACK_WATERMARK_WORD 0xA5A55A5Au
+
+/*
+ * Stack watermarking uses the Arm Compiler scatter-loader stack region names.
+ * AC6 provides these symbols natively from ARM_LIB_STACK. Other embedded
+ * toolchains must provide compatible aliases in their linker script, for
+ * example mapping them to __stack_limit and __stack. Host builds stub this out.
+ */
+extern uint32_t Image$$ARM_LIB_STACK$$ZI$$Base[] __asm("Image$$ARM_LIB_STACK$$ZI$$Base");
+extern uint32_t Image$$ARM_LIB_STACK$$ZI$$Limit[] __asm("Image$$ARM_LIB_STACK$$ZI$$Limit");
+
+static uint32_t *g_stack_watermark_end;
+
+static uint32_t
+read_msp(void)
+{
+    uint32_t sp;
+    __asm volatile("mrs %0, msp" : "=r"(sp));
+    return sp;
+}
+
+static void
+stack_watermark_init(void)
+{
+    uint32_t *base = Image$$ARM_LIB_STACK$$ZI$$Base;
+    uint32_t *limit = Image$$ARM_LIB_STACK$$ZI$$Limit;
+    uint32_t *end = (uint32_t *)(read_msp() & ~(uint32_t)0x3);
+
+    if (end > limit)
+    {
+        end = limit;
+    }
+    if (end <= base)
+    {
+        g_stack_watermark_end = base;
+        return;
+    }
+
+    g_stack_watermark_end = end;
+    for (uint32_t *p = base; p < end; ++p)
+    {
+        *p = STACK_WATERMARK_WORD;
+    }
+}
+
+static size_t
+stack_watermark_used_bytes(void)
+{
+    uint32_t *base = Image$$ARM_LIB_STACK$$ZI$$Base;
+    uint32_t *limit = Image$$ARM_LIB_STACK$$ZI$$Limit;
+    uint32_t *end = g_stack_watermark_end ? g_stack_watermark_end : base;
+    uint32_t *p = base;
+
+    while (p < end && *p == STACK_WATERMARK_WORD)
+    {
+        ++p;
+    }
+
+    return (size_t)((uintptr_t)limit - (uintptr_t)p);
+}
+
+static void
+stack_watermark_report(void)
+{
+    size_t total = (size_t)((uintptr_t)Image$$ARM_LIB_STACK$$ZI$$Limit
+                            - (uintptr_t)Image$$ARM_LIB_STACK$$ZI$$Base);
+    size_t used = stack_watermark_used_bytes();
+    size_t free = used < total ? total - used : 0;
+
+    printf("Stack watermark  : %u / %u bytes used, %u bytes free\n",
+           (unsigned)used,
+           (unsigned)total,
+           (unsigned)free);
+}
+#else
+static void stack_watermark_init(void) {}
+static void stack_watermark_report(void) {}
+#endif
 
 uint64_t
 th_microseconds(void)
@@ -93,6 +173,8 @@ main(void)
         return -1;
     }
 
+    stack_watermark_init();
+
     printf("Computing run speed\n");
 
     do
@@ -137,6 +219,7 @@ main(void)
     printf("Total runtime    : %.3f seconds\n", sec);
     printf("Total iterations : %d iterations\n", iterations);
     printf("Score            : %f AudioMarks\n", score);
+    stack_watermark_report();
 exit:
     ee_audiomark_release();
     return err ? -1 : 0;

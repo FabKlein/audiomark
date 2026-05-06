@@ -16,8 +16,6 @@
 
 default:
 
-  compiler: AC6
-
   misc:
     - for-compiler: AC6
       C-CPP:
@@ -59,6 +57,10 @@ default:
         - -Ofast
         - -ffast-math
         - -flax-vector-conversions
+        # Work around GCC 15.2 Arm toolchain ICEs seen in CMSIS-DSP during
+        # RTL conditional execution passes (ce1/ce2)
+        - -fdisable-rtl-ce1
+        - -fdisable-rtl-ce2
         - -ffunction-sections
         - -fdata-sections
         - -include "RTE_Components.h"

@@ -60,6 +60,9 @@ void th_cmplx_mult_cmplx_f32(const ee_f32_t *p_a,
 /* C = A + B */
 void th_add_f32(ee_f32_t *p_a, ee_f32_t *p_b, ee_f32_t *p_c, uint32_t len);
 
+/* A = saturate_q15(A + C), B = saturate_q15(B + C) */
+void th_add_mix_sat_s16(int16_t *p_a, int16_t *p_b, const int16_t *p_c, size_t len);
+
 /* C = A - B */
 void th_subtract_f32(ee_f32_t *p_a, ee_f32_t *p_b, ee_f32_t *p_c, uint32_t len);
 

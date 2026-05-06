@@ -198,10 +198,11 @@ VISIB_ATTR void update_noise_estimate(SpeexPreprocessState * st, spx_word16_t be
         /* setup predicate based on update_prob & noise conditions  */
         mve_pred16_t    p0 = vcmpeqq_n_s32(prob, 0);
         mve_pred16_t    p1 = vcmpltq(ps, noise);
+        mve_pred16_t    pred = (mve_pred16_t)(p0 | p1);
 
         /* select between max(0, noise*(1-beta) + ps*beta) */
         float32x4_t     tmp = vmaxnmq_m(noise, vdupq_n_f32(0.0f),
-                                        vfmaq(vmulq(noise, beta_1), ps, beta), (p0 | p1));
+                                        vfmaq(vmulq(noise, beta_1), ps, beta), pred);
 
         vst1q(pnoise, tmp);
 

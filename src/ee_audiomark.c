@@ -214,10 +214,15 @@ ee_audiomark_release(void)
         goto exit_error; \
     }
 
+static void
+ee_apply_feedback(int16_t * left_capture, int16_t * right_capture, int16_t * audio_input, size_t size)
+{
+    th_add_mix_sat_s16(left_capture, right_capture, audio_input, size);
+}
+
 int
 ee_audiomark_run(void)
 {
-    int32_t sum;
     ee_reset_audio();
     while (!read_all_audio_data)
     {
@@ -225,18 +230,8 @@ ee_audiomark_run(void)
         ee_copy_audio(left_capture, 0);
         ee_copy_audio(right_capture, 0);
 
-        // linear feedback of the loudspeaker to the MICs
-        for (int i = 0; i < BYTES_PER_AUDIO_FRAME / 2; i++)
-        {
-            sum  = left_capture[i] + audio_input[i];
-            if (sum > 32767) sum = 32767; /* Saturation if overflow */
-            if (sum < -32768) sum = -32768; /* Saturation if overflow */
-            left_capture[i] = sum;
-            sum = right_capture[i] + audio_input[i];
-            if (sum > 32767) sum = 32767; /* Saturation if overflow */
-            if (sum < -32768) sum = -32768;	/* Saturation if overflow */
-            right_capture[i] = sum;
-        }
+        ee_apply_feedback(left_capture, right_capture, audio_input, BYTES_PER_AUDIO_FRAME / 2);
+
 
         CHECK(ee_abf_f32(NODE_RUN, (void **)&p_bmf_inst, xdais_bmf, NULL));
         CHECK(ee_aec_f32(NODE_RUN, (void **)&p_aec_inst, xdais_aec, NULL));

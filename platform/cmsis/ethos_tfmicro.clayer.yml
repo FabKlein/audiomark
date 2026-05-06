@@ -6,6 +6,7 @@ layer:
   components:
     - component: ARM::ML Eval Kit:Common:Log
     - component: ARM::ML Eval Kit:Common:API
+    - component: ARM::ML Eval Kit:ML Framework:TFLM
     - component: ARM::ML Eval Kit:Common:Math
     - component: tensorflow::Machine Learning:TensorFlow:Kernel Utils
       define:
@@ -19,17 +20,26 @@ layer:
       for-context:
         - +Ethos-Corstone-315
 
+    - component: Arm::Machine Learning:NPU Support:Ethos-U Driver&Generic U85
+      for-context:
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
+
     - component: tensorflow::Machine Learning:TensorFlow:Kernel&Ethos-U
       for-context:
         - +Ethos-MPS3-Corstone-300
         - +Ethos-MPS3-Corstone-310
         - +Ethos-Corstone-315
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: tensorflow::Machine Learning:TensorFlow:Kernel&CMSIS-NN
       not-for-context:
         - +Ethos-MPS3-Corstone-300
         - +Ethos-MPS3-Corstone-310
         - +Ethos-Corstone-315
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: tensorflow::Data Exchange:Serialization:flatbuffers
     - component: tensorflow::Data Processing:Math:gemmlowp fixed-point
@@ -48,6 +58,21 @@ layer:
           - +Ethos-MPS3-Corstone-300
           - +Ethos-MPS3-Corstone-310
           - +Ethos-Corstone-315
+          - +Ethos-MPS4-Corstone-320-FVP
+          - +Ethos-MPS4-Corstone-320-FPGA
+
+        - file: ./ethosu_cpu_cache.c
+          for-context:
+          - +Ethos-MPS3-Corstone-300
+          - +Ethos-MPS3-Corstone-310
+          - +Ethos-Corstone-315
+          - +Ethos-MPS4-Corstone-320-FVP
+          - +Ethos-MPS4-Corstone-320-FPGA
+
+        - file: ./ethosu_timing_adapter_fpga.c
+          for-context:
+          - +Ethos-MPS4-Corstone-320-FVP
+          - +Ethos-MPS4-Corstone-320-FPGA
 
         - file: ../../ports/arm/ds_cnn_model.cpp
 
@@ -62,23 +87,37 @@ layer:
           for-context:
           - +Ethos-Corstone-315
 
+        - file: ../../ports/arm/ds_cnn_s_quantized_U85_256_sram_only_vela.tflite.cpp
+          for-context:
+          - +Ethos-MPS4-Corstone-320-FVP
+
+        - file: ../../ports/arm/ds_cnn_s_quantized_U85_1024_sram_only_vela.tflite.cpp
+          for-context:
+          - +Ethos-MPS4-Corstone-320-FPGA
+
         - file: ../../ports/arm/run_ethosu.cpp
           for-context:
           - +Ethos-MPS3-Corstone-300
           - +Ethos-MPS3-Corstone-310
           - +Ethos-Corstone-315
+          - +Ethos-MPS4-Corstone-320-FVP
+          - +Ethos-MPS4-Corstone-320-FPGA
 
         - file: ../../ports/arm/ds_cnn_s_quantized.tflite.cpp
           not-for-context:
           - +Ethos-MPS3-Corstone-300
           - +Ethos-MPS3-Corstone-310
           - +Ethos-Corstone-315
+          - +Ethos-MPS4-Corstone-320-FVP
+          - +Ethos-MPS4-Corstone-320-FPGA
 
         - file: ../../ports/arm/run_cmsis_nn.cpp
           not-for-context:
           - +Ethos-MPS3-Corstone-300
           - +Ethos-MPS3-Corstone-310
           - +Ethos-Corstone-315
+          - +Ethos-MPS4-Corstone-320-FVP
+          - +Ethos-MPS4-Corstone-320-FPGA
 
       add-path:
         - .

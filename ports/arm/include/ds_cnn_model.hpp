@@ -17,10 +17,10 @@
 #ifndef DSCNN_MODEL_HPP
 #define DSCNN_MODEL_HPP
 
-#include "Model.hpp"
+#include "TflmModel.hpp"
 
 
-class DSCNNModel : public arm::app::Model {
+class DSCNNModel : public arm::app::fwk::tflm::TflmModel {
 
 protected:
     /** @brief   Gets the reference to op resolver interface class. */

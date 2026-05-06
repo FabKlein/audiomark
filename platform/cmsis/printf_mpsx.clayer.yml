@@ -18,6 +18,9 @@ layer:
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
         - +Ethos-Corstone-315
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: ARM::CMSIS Driver:USART
       for-context:
@@ -27,15 +30,9 @@ layer:
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
         - +Ethos-Corstone-315
-
-    - component: Keil::Board Support&V2M-MPS2 IOT-Kit:Common@2.0.0
-      for-context:
-       - +MPS2-IOTKit-CM33
-
-    - component: Keil::Board Support&V2M-MPS2:Common@2.0.0
-      for-context:
-        - +MPS2-CMSDK_CM4_FP
-        - +MPS2-CMSDK_CM7_SP
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - component: Keil::CMSIS Driver:USART
       not-for-context:
@@ -45,4 +42,6 @@ layer:
         - +Ethos-MPS3-Corstone-310
         - +Corstone-315
         - +Ethos-Corstone-315
-
+        - +MPS4-Corstone-320
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA

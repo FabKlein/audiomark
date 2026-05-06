@@ -169,6 +169,30 @@ th_add_f32(ee_f32_t *p_a, ee_f32_t *p_b, ee_f32_t *p_c, uint32_t len)
     #warning "th_add_f32() not implemented"
 }
 
+static int16_t
+th_sat_s16(int32_t value)
+{
+    if (value > 32767)
+    {
+        return 32767;
+    }
+    if (value < -32768)
+    {
+        return -32768;
+    }
+    return (int16_t)value;
+}
+
+void
+th_add_mix_sat_s16(int16_t *p_a, int16_t *p_b, const int16_t *p_c, size_t len)
+{
+    for (size_t i = 0; i < len; ++i)
+    {
+        p_a[i] = th_sat_s16((int32_t)p_a[i] + p_c[i]);
+        p_b[i] = th_sat_s16((int32_t)p_b[i] + p_c[i]);
+    }
+}
+
 void
 th_subtract_f32(ee_f32_t *p_a, ee_f32_t *p_b, ee_f32_t *p_c, uint32_t len)
 {

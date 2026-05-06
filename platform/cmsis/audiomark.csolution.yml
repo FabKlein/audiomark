@@ -22,6 +22,7 @@ solution:
   created-for: cmsis-toolbox@2.0.0
 
   cdefault:
+  compiler: AC6
 
   define:
     - OS_SUPPORT_CUSTOM
@@ -33,32 +34,35 @@ solution:
     - REDUCED_FFT_TABSZ
 
   packs:
-    - pack: ARM::CMSIS-DSP@1.15.0
-    - pack: ARM::CMSIS-NN@4.1.0
-    - pack: ARM::CMSIS@6.0.0
+    - pack: ARM::CMSIS-DSP@1.17.0
+    - pack: ARM::CMSIS-NN@7.0.0
+    - pack: ARM::CMSIS@6.3.0
     - pack: ARM::V2M_MPS3_SSE_300_BSP@1.5.0
     - pack: ARM::V2M_MPS3_SSE_310_BSP@1.4.0
     - pack: ARM::SSE_315_BSP@1.0.0
-    - pack: ARM::CMSIS-Compiler@2.0.0
+    - pack: ARM::SSE_320_BSP@1.1.0
+    - pack: ARM::CMSIS-Compiler@2.2.0
     - pack: ARM::DMA350@1.0.0
-    - pack: GorgonMeducer::perf_counter@2.3.0
-    - pack: Keil::V2M-MPS2_IOTKit_BSP@1.5.0
-    - pack: Keil::V2M-MPS2_CMx_BSP@1.8.0
+    - pack: GorgonMeducer::perf_counter@2.5.4
+    - pack: Keil::V2M-MPS2_IOTKit_BSP@1.5.2
+    - pack: Keil::V2M-MPS2_CMx_BSP@1.8.2
 
 
-    - pack: ARM::ml-embedded-eval-kit-uc-api@22.8.0-Beta
-    - pack: tensorflow::tensorflow-lite-micro@1.22.8
+    - pack: ARM::ml-embedded-eval-kit-uc-api@25.12.1
+    - pack: tensorflow::tensorflow-lite-micro@1.26.2
 
-    - pack: Arm::ethos-u-core-driver@1.22.8
+    - pack: Arm::ethos-u-core-driver@1.26.2
       for-context:
         - +Ethos-MPS3-Corstone-300
         - +Ethos-MPS3-Corstone-310
         - +Ethos-Corstone-315
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
-    - pack: tensorflow::flatbuffers@1.22.8
-    - pack: tensorflow::gemmlowp@1.22.8
-    - pack: tensorflow::kissfft@1.22.8
-    - pack: tensorflow::ruy@1.22.8
+    - pack: tensorflow::flatbuffers@1.26.2
+    - pack: tensorflow::gemmlowp@1.26.2
+    - pack: tensorflow::kissfft@1.26.2
+    - pack: tensorflow::ruy@1.26.2
 
   target-types:
 
@@ -69,6 +73,50 @@ solution:
       device: ARM::SSE-315-FVP
       define:
         - ETHOSU65
+
+    - type: MPS4-Corstone-320
+      device: ARM::SSE-320-FVP
+
+    - type: Ethos-MPS4-Corstone-320-FVP
+      device: ARM::SSE-320-FVP
+      define:
+        - ETHOSU85
+        # Match the SRAM-only Vela output: queue, constants and activation
+        # buffers all use the SRAM AXI path. The Ethos-U driver pack defaults
+        # target a different U85 memory topology.
+        - NPU_QCONFIG: 1
+        - NPU_REGIONCFG_0: 1
+        - NPU_REGIONCFG_1: 1
+        - NPU_REGIONCFG_2: 1
+        - NPU_REGIONCFG_3: 1
+        - NPU_REGIONCFG_4: 1
+        - NPU_REGIONCFG_5: 1
+        - NPU_REGIONCFG_6: 1
+        - NPU_REGIONCFG_7: 1
+        # Ethos-U scratch buffers reside in SRAM (IFM/OFM, intermediate tensors).
+        # Neural network constants reside in SRAM (weights, scales, biases).
+        - ETHOS_U_NPU_MEMORY_MODE: ETHOS_U_NPU_MEMORY_MODE_SRAM_ONLY
+
+    - type: Ethos-MPS4-Corstone-320-FPGA
+      device: ARM::SSE-320-FVP
+      define:
+        - ETHOSU85
+        - SSE_320_FPGA
+        # Match the SRAM-only Vela output: queue, constants and activation
+        # buffers all use the SRAM AXI path. The Ethos-U driver pack defaults
+        # target a different U85 memory topology.
+        - NPU_QCONFIG: 1
+        - NPU_REGIONCFG_0: 1
+        - NPU_REGIONCFG_1: 1
+        - NPU_REGIONCFG_2: 1
+        - NPU_REGIONCFG_3: 1
+        - NPU_REGIONCFG_4: 1
+        - NPU_REGIONCFG_5: 1
+        - NPU_REGIONCFG_6: 1
+        - NPU_REGIONCFG_7: 1
+        # Ethos-U scratch buffers reside in SRAM (IFM/OFM, intermediate tensors).
+        # Neural network constants reside in SRAM (weights, scales, biases).
+        - ETHOS_U_NPU_MEMORY_MODE: ETHOS_U_NPU_MEMORY_MODE_SRAM_ONLY
 
     - type: MPS3-Corstone-310
       device: ARM::SSE-310-MPS3_AN555
@@ -114,18 +162,24 @@ solution:
         - +Ethos-MPS3-Corstone-300
         - +Ethos-MPS3-Corstone-310
         - +Ethos-Corstone-315
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - project: ./testaec/testaec.cproject.yml
       not-for-context:
         - +Ethos-MPS3-Corstone-300
         - +Ethos-MPS3-Corstone-310
         - +Ethos-Corstone-315
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - project: ./testabf/testabf.cproject.yml
       not-for-context:
         - +Ethos-MPS3-Corstone-300
         - +Ethos-MPS3-Corstone-310
         - +Ethos-Corstone-315
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - project: ./testkws/testkws.cproject.yml
     - project: ./testmfcc/testmfcc.cproject.yml
@@ -133,5 +187,7 @@ solution:
         - +Ethos-MPS3-Corstone-300
         - +Ethos-MPS3-Corstone-310
         - +Ethos-Corstone-315
+        - +Ethos-MPS4-Corstone-320-FVP
+        - +Ethos-MPS4-Corstone-320-FPGA
 
     - project: ./audiomark_app/audiomark_app.cproject.yml

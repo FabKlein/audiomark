@@ -111,8 +111,11 @@ PHDRS
 SECTIONS
 {
 	.itcm : {
-    	/**(.text.arm_cfft_*)*/
-		* (.text.arm_*)
+		/* ITCM is only 32 KiB. Keep the AudioMark CMSIS-DSP floating-point
+		 * kernels here, but do not catch all .text.arm_* sections: CMSIS-NN
+		 * also uses that prefix and GCC 15 emits enough NN code to overflow
+		 * ITCM. Unmatched arm_* sections fall through to the FSRAM .text. */
+		* (.text.arm_*_f32)
         } >ITCM AT>ITCM :itcm
 
 	.dtcm : {

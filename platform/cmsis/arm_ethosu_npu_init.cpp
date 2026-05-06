@@ -33,6 +33,23 @@ extern "C" {
 #include "ethosu_driver.h" /* Arm Ethos-U NPU driver header */
 #include "include/ethosu_mem_config.h" /* Arm Ethos-U NPU memory config */
 
+#if defined(SSE_320_FPGA) && defined(ETHOSU85) && defined(NPU0_APB_BASE_S)
+int arm_ethosu_timing_adapter_fpga_init(void);
+#endif
+
+/* The newer SSE BSPs expose the U85 as NPU0. NPU0_IRQn is an enum value, so
+ * use the NPU0 base-address macro as the preprocessor guard. Older U55/U65 BSPs
+ * use the Ethos-U55 IRQ name, so keep that as the fallback. */
+#if defined(NPU0_APB_BASE_S)
+#define ARM_ETHOSU_IRQNUM ((IRQn_Type)NPU0_IRQn)
+#else
+#define ARM_ETHOSU_IRQNUM ((IRQn_Type)ETHOS_U55_IRQn)
+#endif
+
+#ifndef ARM_ETHOSU_IRQ_PRIORITY
+#define ARM_ETHOSU_IRQ_PRIORITY 5u
+#endif
+
 #if defined(ETHOS_U_CACHE_BUF_SZ) && (ETHOS_U_CACHE_BUF_SZ > 0)
 static uint8_t cache_arena[ETHOS_U_CACHE_BUF_SZ] CACHE_BUF_ATTRIBUTE;
 #else  /* defined (ETHOS_U_CACHE_BUF_SZ) && (ETHOS_U_CACHE_BUF_SZ > 0) */
@@ -55,6 +72,46 @@ static size_t get_cache_arena_size()
 
 struct ethosu_driver ethosu_drv; /* Default Ethos-U device driver */
 
+#if defined(SSE_320_FPGA) && defined(ETHOSU85)
+/* MLEK relocates the vector table to writable memory on MPS4 platforms with an
+ * NPU because the Ethos-U driver installs its interrupt handler dynamically via
+ * NVIC_SetVector(). Do the same for the CMSIS-Pack SSE-320 FPGA build while
+ * keeping the CMSIS startup code.
+ *
+ * Reference implementation:
+ * https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit/-/blob/main/source/hal/source/platform/mps4/source/platform_drivers.c
+ */
+#define ARM_ETHOSU_VECTOR_COUNT 256u
+static uint32_t arm_ethosu_vector_table[ARM_ETHOSU_VECTOR_COUNT] __attribute__((aligned(1024)));
+static uint8_t arm_ethosu_vector_table_relocated;
+
+static void arm_ethosu_relocate_vector_table(void)
+{
+    if (arm_ethosu_vector_table_relocated) {
+        return;
+    }
+
+    const uint32_t *src = (const uint32_t *)SCB->VTOR;
+    for (uint32_t i = 0; i < ARM_ETHOSU_VECTOR_COUNT; ++i) {
+        arm_ethosu_vector_table[i] = src[i];
+    }
+
+    /* Switch VTOR only after the copy is complete, with interrupts masked so no
+     * exception observes a partially relocated table. */
+    __disable_irq();
+    SCB->VTOR = (uint32_t)arm_ethosu_vector_table;
+    __DSB();
+    __ISB();
+    __enable_irq();
+
+    arm_ethosu_vector_table_relocated = 1;
+}
+#else
+static void arm_ethosu_relocate_vector_table(void)
+{
+}
+#endif
+
 /** @brief   Defines the Ethos-U interrupt handler: just a wrapper around the default
  *           implementation. */
 static void arm_ethosu_npu_irq_handler(void)
@@ -66,17 +123,15 @@ static void arm_ethosu_npu_irq_handler(void)
 /** @brief  Initialises the NPU IRQ */
 static void arm_ethosu_npu_irq_init(void)
 {
-    #ifdef NPU0_APB_BASE_S
-    /* Corstone-310/315 */
-    const IRQn_Type ethosu_irqnum = (IRQn_Type)NPU0_IRQn;
-    #else
-    /* Corstone-300 */
-    const IRQn_Type ethosu_irqnum = (IRQn_Type)ETHOS_U55_IRQn;
-    #endif
+    const IRQn_Type ethosu_irqnum = ARM_ETHOSU_IRQNUM;
 
-    /* Register the EthosU IRQ handler in our vector table.
-     * Note, this handler comes from the EthosU driver */
+    arm_ethosu_relocate_vector_table();
+
+    /* Register the Ethos-U IRQ handler in the active vector table. For the
+     * SSE-320 FPGA path this table has just been relocated to RAM. */
     NVIC_SetVector(ethosu_irqnum, (uint32_t)arm_ethosu_npu_irq_handler);
+    NVIC_SetPriority(ethosu_irqnum, ARM_ETHOSU_IRQ_PRIORITY);
+    NVIC_ClearPendingIRQ(ethosu_irqnum);
 
     /* Enable the IRQ */
     NVIC_EnableIRQ(ethosu_irqnum);
@@ -88,15 +143,22 @@ static void arm_ethosu_npu_irq_init(void)
 static int arm_ethosu_npu_init(void) {
     int err = EE_STATUS_OK;
 
+#if defined(SSE_320_FPGA) && defined(ETHOSU85) && defined(NPU0_APB_BASE_S)
+    if (arm_ethosu_timing_adapter_fpga_init() != 0) {
+        printf_err("failed to initialise Ethos-U timing adapter\n");
+        return EE_STATUS_ERROR;
+    }
+#endif
+
     /* Initialise the IRQ */
     arm_ethosu_npu_irq_init();
 
     /* Initialise Ethos-U device */
     #ifdef NPU0_APB_BASE_S
     /* Corstone-310/315 */
-    const void* ethosu_base_address = (void*)(NPU0_APB_BASE_S);
+    void* ethosu_base_address = (void*)(NPU0_APB_BASE_S);
     #else
-    const void* ethosu_base_address = (void*)(ETHOS_U55_APB_BASE_S);
+    void* ethosu_base_address = (void*)(ETHOS_U55_APB_BASE_S);
     #endif
 
     debug("Cache arena: 0x%p\n", get_cache_arena());

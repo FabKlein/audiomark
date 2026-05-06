@@ -1,0 +1,202 @@
+;#! armclang --target=arm-arm-none-eabi -march=armv8.1-m.main -E -xc
+;/*
+; * Copyright (c) 2018-2024 Arm Limited
+; *
+; * Licensed under the Apache License, Version 2.0 (the "License");
+; * you may not use this file except in compliance with the License.
+; * You may obtain a copy of the License at
+; *
+; *     http://www.apache.org/licenses/LICENSE-2.0
+; *
+; * Unless required by applicable law or agreed to in writing, software
+; * distributed under the License is distributed on an "AS IS" BASIS,
+; * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; * See the License for the specific language governing permissions and
+; * limitations under the License.
+; *
+; */
+
+#include "region_defs.h"
+
+; The current SSE-320 pack region_defs.h does not define the TCM regions used
+; by the FPGA image layout, so keep the ITCM/DTCM addresses explicit here.
+#define ITCM_START 0x10000000
+#define ITCM_SIZE  0x00008000
+#define DTCM_START 0x30000000
+#define DTCM_SIZE  0x00008000
+#define DTCM_STACK_SIZE 0x00001000
+
+;---------------------------------------------------------
+; First load region: 64 KiB boot/vector region.
+; INITSVTOR on Corstone-320 points at 0x11000000.
+;---------------------------------------------------------
+LOAD_REGION_0       0x11000000                  0x00010000
+{
+    boot.bin        0x11000000                  0x00010000
+    {
+        *.o (RESET, +First)
+        *(InRoot$$Sections)
+    }
+}
+
+;---------------------------------------------------------
+; Second load region: FPGA SRAM/BRAM.
+;---------------------------------------------------------
+LOAD_REGION_1       0x12000000                  0x00200000
+{
+    ; 640 KiB for executable code.
+    bram.bin        0x12000000 ALIGN 8          0x000A0000
+    {
+        .ANY (+RO)
+    }
+
+    ; Hot audio front-end and FFT kernels execute from ITCM, but are stored
+    ; in the BRAM load image and copied by the C runtime scatter-loader.
+    itcm.bin        ITCM_START ALIGN 16         ITCM_SIZE
+    {
+        ee_abf_f32.o (.text.ee_abf_f32)
+        ee_aec_f32.o (.text.ee_aec_f32)
+        ee_anr_f32.o (.text.ee_anr_f32)
+        ee_mfcc_f32.o (.text.ee_mfcc_f32_compute)
+
+        BasicMathFunctions.o (.text.arm_*_f32)
+        ComplexMathFunctions.o (.text.arm_cmplx_*_f32)
+        FastMathFunctions.o (.text.arm_*_f32)
+        MatrixFunctions.o (.text.arm_*_f32)
+        StatisticsFunctions.o (.text.arm_*_f32)
+        SupportFunctions.o (.text.arm_*_f32)
+        SupportFunctions.o (.text.arm_float_to_q15)
+        SupportFunctions.o (.text.arm_q15_to_float)
+        TransformFunctions.o (.text.arm_cfft_f32)
+        TransformFunctions.o (.text.arm_rfft_f32)
+        TransformFunctions.o (.text.arm_rfft_fast_f32)
+
+        filterbank.o (.text.filterbank_compute_bank32)
+        filterbank.o (.text.filterbank_compute_psd16)
+        fftwrap.o (.text.spx_fft)
+        fftwrap.o (.text.spx_ifft)
+        mdf.o (.text.mdf_adjust_prop)
+        mdf.o (.text.speex_echo_cancellation)
+        preprocess.o (.text.preprocess_analysis)
+        preprocess.o (.text.speex_preprocess_run)
+        preprocess.o (.text.update_noise_prob)
+
+        ethosu.o (.text._ZN6tflite12_GLOBAL__N_14EvalEP13TfLiteContextP10TfLiteNode)
+        ethosu_device_u85.o (.text.ethosu_address_remap)
+        ethosu_device_u85.o (.text.ethosu_config_select)
+        ethosu_device_u85.o (.text.ethosu_dev_handle_interrupt)
+        ethosu_device_u85.o (.text.ethosu_dev_print_err_status)
+        ethosu_device_u85.o (.text.ethosu_dev_run_command_stream)
+        ethosu_device_u85.o (.text.ethosu_dev_verify_optimizer_config)
+        ethosu_driver.o (.text.ethosu_flush_dcache)
+        ethosu_driver.o (.text.ethosu_inference_begin)
+        ethosu_driver.o (.text.ethosu_inference_end)
+        ethosu_driver.o (.text.ethosu_invalidate_dcache)
+        ethosu_driver.o (.text.ethosu_invoke_async)
+        ethosu_driver.o (.text.ethosu_invoke_v3)
+        ethosu_driver.o (.text.ethosu_irq_handler)
+        ethosu_driver.o (.text.ethosu_mutex_lock)
+        ethosu_driver.o (.text.ethosu_mutex_unlock)
+        ethosu_driver.o (.text.ethosu_release_driver)
+        ethosu_driver.o (.text.ethosu_reserve_driver)
+        ethosu_driver.o (.text.ethosu_semaphore_give)
+        ethosu_driver.o (.text.ethosu_semaphore_take)
+        ethosu_driver.o (.text.ethosu_wait)
+        run_ethosu.o (.text.classify_on_ethosu)
+
+        * (i.__hardfp_expf)
+        * (i.__hardfp_logf)
+        * (i.__hardfp_powf)
+
+        th_api.o (.text.th_absmax_f32)
+        th_api.o (.text.th_add_f32)
+        th_api.o (.text.th_add_mix_sat_s16)
+        th_api.o (.text.th_cfft_f32)
+        th_api.o (.text.th_cmplx_conj_f32)
+        th_api.o (.text.th_cmplx_dot_prod_f32)
+        th_api.o (.text.th_cmplx_mag_f32)
+        th_api.o (.text.th_cmplx_mult_cmplx_f32)
+        th_api.o (.text.th_dot_prod_f32)
+        th_api.o (.text.th_f32_to_int16)
+        th_api.o (.text.th_int16_to_f32)
+        th_api.o (.text.th_mat_vec_mult_f32)
+        th_api.o (.text.th_multiply_f32)
+        th_api.o (.text.th_offset_f32)
+        th_api.o (.text.th_rfft_f32)
+        th_api.o (.text.th_subtract_f32)
+        th_api.o (.text.th_vlog_f32)
+    }
+
+    ; 548 KiB for constants, RW data and ZI data.
+    data.bin        0x120A0000 ALIGN 8          0x00089000
+    {
+        .ANY (+RO-DATA)
+        .ANY (+RW +ZI)
+    }
+
+    ; 604 KiB heap.
+    ARM_LIB_HEAP    0x12129000 EMPTY ALIGN 8    0x00097000
+    {}
+
+    ; Small FFT lookup tables execute from DTCM, but are stored in the BRAM
+    ; load image and copied by the C runtime scatter-loader.
+    dtcm_fft.bin    DTCM_START ALIGN 16         (DTCM_SIZE - DTCM_STACK_SIZE)
+    {
+        CommonTables.o (.rodata.armBitRevIndexTable_fixed_64)
+        CommonTables.o (.rodata.armBitRevIndexTable_fixed_128)
+        CommonTables.o (.rodata.armBitRevIndexTable_fixed_256)
+        CommonTables.o (.rodata.armBitRevIndexTable_fixed_512)
+
+        CommonTables.o (.rodata.rearranged_twiddle_stride1_64_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_stride2_64_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_stride3_64_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_tab_stride1_arr_64_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_tab_stride2_arr_64_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_tab_stride3_arr_64_f32)
+
+        CommonTables.o (.rodata.rearranged_twiddle_stride1_256_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_stride2_256_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_stride3_256_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_tab_stride1_arr_256_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_tab_stride2_arr_256_f32)
+        CommonTables.o (.rodata.rearranged_twiddle_tab_stride3_arr_256_f32)
+
+        CommonTables.o (.rodata.twiddleCoef_64)
+        CommonTables.o (.rodata.twiddleCoef_128)
+        CommonTables.o (.rodata.twiddleCoef_256)
+        CommonTables.o (.rodata.twiddleCoef_512)
+        CommonTables.o (.rodata.twiddleCoef_rfft_128)
+        CommonTables.o (.rodata.twiddleCoef_rfft_512)
+        CommonTables.o (.rodata.twiddleCoef_rfft_1024)
+
+        ee_mfcc_f32_tables.o (.rodata.ee_mfcc_dct_coefs_f32)
+        ee_mfcc_f32_tables.o (.rodata.ee_mfcc_filter_coefs_f32)
+        ee_mfcc_f32_tables.o (.rodata.ee_mfcc_filter_len)
+        ee_mfcc_f32_tables.o (.rodata.ee_mfcc_filter_pos)
+        ee_mfcc_f32_tables.o (.rodata.ee_mfcc_window_coefs_f32)
+
+        ee_abf_f32_tables.o (.rodata.w_hanning_div2)
+        preprocess.o (.rodata.vec_hypergeom_gain_f32.table)
+        CommonTables.o (.rodata.__logf_lut_f32)
+        CommonTables.o (.rodata.exp_tab)
+
+        ; Small compiler/runtime constant pools. This mostly catches libm
+        ; constants used by the expf/logf/powf code already executing in ITCM.
+        * (.constdata)
+    }
+
+    ; 4 KiB stack at the top of DTCM. Runtime watermarking in main.c is used
+    ; to confirm this remains enough for the steady-state benchmark path.
+    ARM_LIB_STACK   (DTCM_START + DTCM_SIZE - DTCM_STACK_SIZE) EMPTY ALIGN 8 DTCM_STACK_SIZE
+    {}
+
+    ; Audiomark U85-1024 model and tensor arena fit in internal SRAM.
+    ; The FPGA Vela output is generated with --memory-mode=Sram_Only, so
+    ; there is no separate Ethos-U cache arena/load image here.
+    isram.bin       0x31000000 ALIGN 16         0x00200000
+    {
+        *.o (nn_model)
+        *.o (activation_buf_dram)
+        *.o (.bss.NoInit.activation_buf_sram)
+    }
+}

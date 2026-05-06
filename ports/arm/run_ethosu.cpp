@@ -16,17 +16,27 @@
 #include <arm_mve.h>
 #endif
 
-extern "C" {
-
 #include "ee_audiomark.h"
 #include "ee_api.h"
 #include "ee_mfcc_f32.h"
 #include "ee_nn.h"
-}
+
+#if defined(SSE_320_FPGA) && defined(ETHOSU85)
+/* The U85-1024 FPGA Vela output needs a larger TFLM activation arena than the
+ * default used by the CPU/CMSIS-NN and smaller Ethos-U builds. 128 KiB covers
+ * the current SRAM-only ds_cnn_s model while keeping the arena in SRAM instead
+ * of relying on DDR.
+ */
+#undef ACTIVATION_BUF_SZ
+#define ACTIVATION_BUF_SZ 0x20000
+#endif
 
 #include "include/BufAttributes.hpp" /* Buffer attributes to be applied */
 #include "AudioUtils.hpp"
 #include "include/ds_cnn_model.hpp"
+
+#include <cstring>
+#include <stdio.h>
 
 /* Platform dependent files */
 #include "RTE_Components.h"  /* Provides definition for CMSIS_device_header */
@@ -39,18 +49,17 @@ extern "C" {
 typedef int8_t input_tensor_t[MFCC_FIFO_BYTES];
 typedef int8_t output_tensor_t[NN_NUM_OUTPUT_BYTES];
 
-extern "C" {
-
 /* Tensor arena buffer */
 static uint8_t tensorArena[ACTIVATION_BUF_SZ] ACTIVATION_BUF_ATTRIBUTE;
+
+static DSCNNModel ds_cnn_model;
+
+extern "C" {
 
 /* Optional getter function for the model pointer and its size. */
 extern uint8_t *GetModelPointer();
 
 extern size_t GetModelLen();
-
-
-static DSCNNModel ds_cnn_model;
 
 
 void ethosu_nn_init(void) {
@@ -61,10 +70,12 @@ void ethosu_nn_init(void) {
         return;
     }
 
-    if (!ds_cnn_model.Init(tensorArena,
-                           sizeof(tensorArena),
-                           GetModelPointer(),
-                           GetModelLen())) {
+    arm::app::fwk::iface::MemoryRegion tensorArenaRegion(tensorArena,
+                                                         sizeof(tensorArena));
+    arm::app::fwk::iface::MemoryRegion modelRegion(GetModelPointer(),
+                                                   GetModelLen());
+
+    if (!ds_cnn_model.Init(tensorArenaRegion, modelRegion)) {
         printf_err("Failed to initialise model\n");
         return;
     }
@@ -72,23 +83,24 @@ void ethosu_nn_init(void) {
 
 int classify_on_ethosu(const input_tensor_t in_data, output_tensor_t out_data) {
 
-
-    TfLiteTensor *inputTensor = ds_cnn_model.GetInputTensor(0);
-    uint8_t *const input_to_nn = tflite::GetTensorData<uint8_t>(inputTensor);
-    memcpy(input_to_nn, in_data, MFCC_FIFO_BYTES);
+    auto inputTensor = ds_cnn_model.GetInputTensor(0);
+    uint8_t *const input_to_nn = inputTensor->GetData<uint8_t>();
+    std::memcpy(input_to_nn, in_data, MFCC_FIFO_BYTES);
 
     SCB_CleanDCache_by_Addr(input_to_nn, MFCC_FIFO_BYTES);
 
-    if (!ds_cnn_model.RunInference()) {
+    const bool inference_ok = ds_cnn_model.RunInference();
+
+    if (!inference_ok) {
         return EE_STATUS_ERROR;
     }
 
-    TfLiteTensor *outputTensor = ds_cnn_model.GetOutputTensor(0);
-    uint8_t *const output_of_nn = tflite::GetTensorData<uint8_t>(outputTensor);
+    auto outputTensor = ds_cnn_model.GetOutputTensor(0);
+    uint8_t *const output_of_nn = outputTensor->GetData<uint8_t>();
 
     SCB_InvalidateDCache_by_Addr(output_of_nn, NN_NUM_OUTPUT_BYTES);
 
-    memcpy(out_data, output_of_nn, NN_NUM_OUTPUT_BYTES);
+    std::memcpy(out_data, output_of_nn, NN_NUM_OUTPUT_BYTES);
 
     return EE_STATUS_OK;
 
