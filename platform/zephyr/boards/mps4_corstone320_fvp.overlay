@@ -1,0 +1,55 @@
+/*
+ * Copyright (C) 2026 Arm Limited
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&ethosu0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	/*
+	 * Corstone-320 FVP timing adapters. Keep this aligned with the Vela
+	 * system configuration used to produce the selected model.
+	 */
+	ta0: timing-adapter@50006000 {
+		compatible = "arm,axi-timing-adapter";
+		reg = <0x50006000>;
+		status = "okay";
+
+		version = <0x1117>;
+		maxr = <8>;
+		maxw = <8>;
+		maxrw = <0>;
+		rlatency = <32>;
+		wlatency = <32>;
+		pulse-on = <3999>;
+		pulse-off = <1>;
+		bwcap = <4000>;
+		mode = <1>;
+		perfctrl = <0>;
+		perfcnt = <0>;
+		histbin = <0>;
+		histcnt = <0>;
+	};
+
+	ta1: timing-adapter@50006800 {
+		compatible = "arm,axi-timing-adapter";
+		reg = <0x50006800>;
+		status = "okay";
+
+		version = <0x1117>;
+		maxr = <64>;
+		maxw = <32>;
+		maxrw = <0>;
+		rlatency = <500>;
+		wlatency = <250>;
+		pulse-on = <4000>;
+		pulse-off = <1000>;
+		bwcap = <3750>;
+		mode = <1>;
+		perfctrl = <0>;
+		perfcnt = <0>;
+		histbin = <0>;
+		histcnt = <0>;
+	};
+};

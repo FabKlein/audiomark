@@ -15,13 +15,21 @@ include_directories(${CMSIS_DSP_ROOT}/PrivateInclude)
 
 
 
-option(USE_ARMNN "Enable Arm NN backend" OFF)
-option(USE_IMX93 "Use NXP i.MX93 TFLite fork and Ethos-U delegate" OFF)
-option(USE_TFL "Enable TensorFlow Lite backend" OFF)
+option(USE_ARMNN "Enable Arm NN backend (linux)" OFF)
+option(USE_TFL "Enable TensorFlow Lite backend (linux)" OFF)
+option(USE_IMX93 "Use NXP i.MX93 TFLite fork and Ethos-U delegate (linux)" OFF)
+
+option(USE_CMSISDSP_NEON "Enable CMSIS-DSP Neon support on Cortex-A builds" OFF)
 
 # only one can be ON
+set(BACKEND_COUNT 0)
+foreach(BACKEND USE_ARMNN USE_TFL USE_IMX93)
+    if(${BACKEND})
+        math(EXPR BACKEND_COUNT "${BACKEND_COUNT} + 1")
+    endif()
+endforeach()
 math(EXPR BACKEND_COUNT
-    "${USE_ARMNN} + ${USE_IMX93} + ${USE_TFL}"
+    "${BACKEND_COUNT}"
 )
 
 if(BACKEND_COUNT GREATER 1)
@@ -262,6 +270,8 @@ if(USE_CMSISDSP_NEON)
         ${CMSIS_DSP_ROOT}/Source/CommonTables/arm_neon_tables.c
         ${CMSIS_DSP_ROOT}/Source/CommonTables/arm_neon_tables_f16.c
     )
+else()
+    add_definitions(-DGENERIC_ARCH)
 endif()
 
 

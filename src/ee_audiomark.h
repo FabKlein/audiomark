@@ -52,15 +52,7 @@ enum _memory_types
     MEMBANK_TYPES,
 };
 
-#define PLATFORM_ARCH_64BIT
-
-// assuming "int" is also the same size as "*int"
-#ifdef PLATFORM_ARCH_32BIT
-#define PTR_INT uint32_t
-#endif
-#ifdef PLATFORM_ARCH_64BIT
-#define PTR_INT uint64_t
-#endif
+#define PTR_INT uintptr_t
 
 typedef struct
 {

@@ -6,6 +6,7 @@ project(audiomark
 
 set(CMAKE_C_FLAGS "-O3")
 set(CMAKE_CXX_FLAGS "-O3")
+option(AUDIOMARK_REDUCED_FFT_TABSZ "Use reduced CMSIS-DSP FFT table init helpers" ON)
 
 # enable custom CPU tuning
 if(CPU)
@@ -30,8 +31,11 @@ list(APPEND EXTRA_LIBS
 
 # For Xiph we are using Float, never Fixed
 add_definitions(-DFLOATING_POINT)
-# CMSIS DSP FFT tables size optimization
-add_definitions(-DREDUCED_FFT_TABSZ)
+# CMSIS DSP FFT tables size optimization. Some CMSIS-DSP trees do not expose
+# the size-specific init helpers used by this mode.
+if(AUDIOMARK_REDUCED_FFT_TABSZ)
+	add_definitions(-DREDUCED_FFT_TABSZ)
+endif()
 # This macro is used extensively in LibSpeeX for function visibility.
 add_definitions(-DEXPORT=)
 # Benchmark system integrator provides heap

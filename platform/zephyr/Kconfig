@@ -1,0 +1,53 @@
+# Copyright (C) 2026 Arm Limited
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "AudioMark Zephyr"
+
+config AUDIOMARK_TENSOR_ARENA_SIZE
+	int "TFLite Micro tensor arena size"
+	default 2097152
+	help
+	  Tensor arena size used by the AudioMark DS-CNN TFLite Micro runner.
+	  Increase this when using larger Vela outputs or additional fallback ops.
+
+choice AUDIOMARK_APP_VARIANT
+	prompt "AudioMark Zephyr application variant"
+	default AUDIOMARK_APP_BENCHMARK
+
+config AUDIOMARK_APP_BENCHMARK
+	bool "Benchmark"
+	select TENSORFLOW_LITE_MICRO
+	select ETHOS_U
+	help
+	  Build the normal AudioMark benchmark runner.
+
+config AUDIOMARK_TEST_KWS
+	bool "KWS unit test"
+	select TENSORFLOW_LITE_MICRO
+	select ETHOS_U
+	help
+	  Build the keyword spotting unit test as a Zephyr application.
+
+config AUDIOMARK_TEST_MFCC
+	bool "MFCC unit test"
+	help
+	  Build the MFCC unit test as a Zephyr application.
+
+config AUDIOMARK_TEST_AEC
+	bool "AEC unit test"
+	help
+	  Build the acoustic echo cancellation unit test as a Zephyr application.
+
+config AUDIOMARK_TEST_ANR
+	bool "ANR unit test"
+	help
+	  Build the automatic noise reduction unit test as a Zephyr application.
+
+config AUDIOMARK_TEST_ABF
+	bool "ABF unit test"
+	help
+	  Build the adaptive beamforming unit test as a Zephyr application.
+
+endchoice
+
+source "Kconfig.zephyr"

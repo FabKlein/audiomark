@@ -332,9 +332,9 @@ th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
 
 #else
 
+#if !defined(TF_INTERPRETER)
 #include "arm_nnfunctions.h"
 
-#if !defined(TF_INTERPRETER)
 extern const int32_t ds_cnn_s_layer_12_fc_bias[12];
 extern const int8_t  ds_cnn_s_layer_12_fc_weights[768];
 extern const int32_t ds_cnn_s_layer_1_conv2d_bias[64];
@@ -850,4 +850,3 @@ th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
 #endif
 }
 #endif
-

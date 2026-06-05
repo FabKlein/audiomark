@@ -1,0 +1,6 @@
+/*
+ * Copyright (C) 2026 Arm Limited
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Board devicetree already exposes the Ethos-U85 instance. */
