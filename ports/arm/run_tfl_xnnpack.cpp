@@ -20,7 +20,11 @@ extern "C"
 }
 
 #include <iostream>
+#include <cstdint>
 #include <vector>
+#if defined(AUDIOMARK_ARM_PROFILE_COUNTER_LINUX_NS)
+#include <time.h>
+#endif
 
 #include <tensorflow/lite/interpreter.h>
 #include <tensorflow/lite/kernels/register.h>
@@ -35,6 +39,31 @@ extern "C"
 
 typedef int8_t input_tensor_t[MFCC_FIFO_BYTES];
 typedef int8_t output_tensor_t[NN_NUM_OUTPUT_BYTES];
+
+static uint64_t last_invoke_cycles;
+
+static inline uint64_t
+read_aarch64_counter()
+{
+#if defined(AUDIOMARK_ARM_PROFILE_COUNTER_LINUX_NS)
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    return ((uint64_t)ts.tv_sec * 1000000000ULL) + (uint64_t)ts.tv_nsec;
+#elif defined(__aarch64__)
+    uint64_t value;
+
+    __asm__ volatile("isb\n"
+                     "mrs %0, cntvct_el0\n"
+                     "isb"
+                     : "=r"(value)
+                     :
+                     : "memory");
+    return value;
+#else
+    return 0;
+#endif
+}
 
 class TFLiteModel
 {
@@ -120,6 +149,11 @@ public:
 
     int Classify(const int8_t *in_data, int8_t *out_data)
     {
+        uint64_t invoke_begin;
+        uint64_t invoke_end;
+
+        last_invoke_cycles = 0;
+
         if (!interpreter)
         {
             std::cerr << "Interpreter is not initialized." << std::endl;
@@ -139,11 +173,14 @@ public:
         memcpy(input_tensor->data.int8, in_data, input_tensor->bytes);
 
         // Run inference
+        invoke_begin = read_aarch64_counter();
         if (interpreter->Invoke() != kTfLiteOk)
         {
             std::cerr << "Failed to invoke interpreter." << std::endl;
             return EE_STATUS_ERROR;
         }
+        invoke_end = read_aarch64_counter();
+        last_invoke_cycles = invoke_end - invoke_begin;
 
         // Get output tensor
         int           output_index  = interpreter->outputs()[0];
@@ -179,6 +216,16 @@ extern "C"
     int classify_on_tflite(const int8_t *in_data, int8_t *out_data)
     {
         return tflite_model.Classify(in_data, out_data);
+    }
+
+    void tflite_reset_last_invoke_cycles(void)
+    {
+        last_invoke_cycles = 0;
+    }
+
+    uint64_t tflite_last_invoke_cycles(void)
+    {
+        return last_invoke_cycles;
     }
 
 }

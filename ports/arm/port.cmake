@@ -15,13 +15,30 @@ include_directories(${CMSIS_DSP_ROOT}/PrivateInclude)
 
 
 
-option(USE_ARMNN "Enable Arm NN backend" OFF)
-option(USE_IMX93 "Use NXP i.MX93 TFLite fork and Ethos-U delegate" OFF)
-option(USE_TFL "Enable TensorFlow Lite backend" OFF)
+option(USE_ARMNN "Enable Arm NN backend (linux)" OFF)
+option(USE_TFL "Enable TensorFlow Lite backend (linux)" OFF)
+option(USE_IMX93 "Use NXP i.MX93 TFLite fork and Ethos-U delegate (linux)" OFF)
+option(AUDIOMARK_ARM_PROFILE "Enable private Arm-port AudioMark component timing" OFF)
+option(AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES "Exit after collecting Arm-port timing samples" ON)
+set(AUDIOMARK_ARM_PROFILE_COUNTER "arch" CACHE STRING "Arm-port profile counter backend: arch or linux_ns")
+set(AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ "" CACHE STRING "Core frequency in Hz used to convert time-based profile samples to cycles")
+set_property(CACHE AUDIOMARK_ARM_PROFILE_COUNTER PROPERTY STRINGS arch linux_ns)
+
+set(_USE_CMSISDSP_NEON_DEFAULT OFF)
+if(CPU MATCHES "^cortex-a")
+    set(_USE_CMSISDSP_NEON_DEFAULT ON)
+endif()
+option(USE_CMSISDSP_NEON "Enable CMSIS-DSP Neon support on Cortex-A builds" ${_USE_CMSISDSP_NEON_DEFAULT})
 
 # only one can be ON
+set(BACKEND_COUNT 0)
+foreach(BACKEND USE_ARMNN USE_TFL USE_IMX93)
+    if(${BACKEND})
+        math(EXPR BACKEND_COUNT "${BACKEND_COUNT} + 1")
+    endif()
+endforeach()
 math(EXPR BACKEND_COUNT
-    "${USE_ARMNN} + ${USE_IMX93} + ${USE_TFL}"
+    "${BACKEND_COUNT}"
 )
 
 if(BACKEND_COUNT GREATER 1)
@@ -29,6 +46,40 @@ if(BACKEND_COUNT GREATER 1)
         "Only one backend can be enabled. "
         "Currently set: USE_ARMNN=${USE_ARMNN}, USE_IMX93=${USE_IMX93}, USE_TFL=${USE_TFL}"
     )
+endif()
+
+if(AUDIOMARK_ARM_PROFILE)
+    list(APPEND PORT_AUDIOMARK_SOURCE
+        ${PORT_DIR}/ee_audiomark_profile.c
+    )
+
+    list(APPEND PORT_AUDIOMARK_LINK_OPTIONS
+        -Wl,--wrap=ee_abf_f32
+        -Wl,--wrap=ee_aec_f32
+        -Wl,--wrap=ee_anr_f32
+        -Wl,--wrap=ee_kws_f32
+    )
+
+    if(AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES)
+        list(APPEND PORT_AUDIOMARK_COMPILE_DEFINITIONS
+            AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES
+        )
+    endif()
+
+    if(AUDIOMARK_ARM_PROFILE_COUNTER STREQUAL "linux_ns")
+        list(APPEND PORT_AUDIOMARK_COMPILE_DEFINITIONS
+            AUDIOMARK_ARM_PROFILE_COUNTER_LINUX_NS
+        )
+    elseif(NOT AUDIOMARK_ARM_PROFILE_COUNTER STREQUAL "arch")
+        message(FATAL_ERROR
+            "AUDIOMARK_ARM_PROFILE_COUNTER must be one of: arch, linux_ns")
+    endif()
+
+    if(AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ)
+        list(APPEND PORT_AUDIOMARK_COMPILE_DEFINITIONS
+            AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ=${AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ}
+        )
+    endif()
 endif()
 
 # ------------------------------------------------------------
@@ -172,6 +223,14 @@ if(USE_ARMNN)
 elseif(USE_TFL)
     message(STATUS "Using TensorFlow Lite")
 
+    if(CPU MATCHES "^cortex-a")
+        set(CMAKE_SYSTEM_PROCESSOR aarch64)
+        set(XNNPACK_TARGET_PROCESSOR aarch64)
+        set(CPUINFO_TARGET_PROCESSOR aarch64)
+        set(XNNPACK_TARGET_PROCESSOR aarch64 CACHE STRING "XNNPACK target processor" FORCE)
+        set(CPUINFO_TARGET_PROCESSOR aarch64 CACHE STRING "cpuinfo target processor" FORCE)
+    endif()
+
     # Set version macros (needed by release_version.h)
     add_definitions(
         -DTF_MAJOR_VERSION=2
@@ -180,7 +239,10 @@ elseif(USE_TFL)
         -DTF_VERSION_SUFFIX=""
         )
 
+    set(_AUDIOMARK_CMAKE_WARN_DEPRECATED ${CMAKE_WARN_DEPRECATED})
+    set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "Suppress deprecation warnings from vendored CMake projects" FORCE)
     add_subdirectory(${PORT_DIR}/libs/external/tensorflow/tensorflow/lite EXCLUDE_FROM_ALL)
+    set(CMAKE_WARN_DEPRECATED ${_AUDIOMARK_CMAKE_WARN_DEPRECATED} CACHE BOOL "Show CMake deprecation warnings" FORCE)
 
     add_definitions(
         -DUSING_ACL_MATH_FUNCTIONS
@@ -196,6 +258,7 @@ elseif(USE_TFL)
 
     list(APPEND EXTRA_LIBS
         tensorflow-lite
+        stdc++
     )
 else()
     message(STATUS "Using CMSIS-NN")
@@ -247,18 +310,13 @@ if(USE_CMSISDSP_NEON)
 
     list(APPEND PORT_SOURCE
         ${CMSIS_DSP_ROOT}/ComputeLibrary/Source/arm_cl_tables.c
-
-        ${CMSIS_DSP_ROOT}/Ne10/CMSIS_NE10_fft_generic_float16.neonintrisic.c
-        ${CMSIS_DSP_ROOT}/Ne10/CMSIS_NE10_fft_generic_float32.neonintrisic.c
-        ${CMSIS_DSP_ROOT}/Ne10/CMSIS_NE10_fft_generic_int32.c
-        ${CMSIS_DSP_ROOT}/Ne10/CMSIS_NE10_fft_generic_int32.neonintrisic.c
-        ${CMSIS_DSP_ROOT}/Ne10/CMSIS_NE10_fft_init.c
-        ${CMSIS_DSP_ROOT}/Ne10/NE10_fft_float16.neonintrinsic.c
         ${CMSIS_DSP_ROOT}/Ne10/NE10_fft_float32.neonintrinsic.c
-        ${CMSIS_DSP_ROOT}/Ne10/NE10_fft_int16.neonintrinsic.c
         ${CMSIS_DSP_ROOT}/Ne10/NE10_fft_int32.neonintrinsic.c
-        ${CMSIS_DSP_ROOT}/Ne10/NE10_rfft_float16.neonintrinsic.c
+        ${CMSIS_DSP_ROOT}/Ne10/NE10_fft_int16.neonintrinsic.c
         ${CMSIS_DSP_ROOT}/Ne10/NE10_rfft_float32.neonintrinsic.c
+        ${CMSIS_DSP_ROOT}/Ne10/CMSIS_NE10_fft_init.c
+        ${CMSIS_DSP_ROOT}/Ne10/CMSIS_NE10_fft_generic_float32.neonintrisic.c
+        ${CMSIS_DSP_ROOT}/Ne10/CMSIS_NE10_fft_generic_int32.neonintrisic.c
         ${CMSIS_DSP_ROOT}/Source/CommonTables/arm_neon_tables.c
         ${CMSIS_DSP_ROOT}/Source/CommonTables/arm_neon_tables_f16.c
     )

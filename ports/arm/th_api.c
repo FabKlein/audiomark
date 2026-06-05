@@ -308,10 +308,23 @@ th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
 
 }
 
+void
+th_nn_reset_last_invoke_cycles(void) {
+}
+
+uint64_t
+th_nn_last_invoke_cycles(void) {
+    return 0;
+}
+
 #elif defined(USE_TFL) || defined(USE_IMX93)
 
 extern int tflite_nn_init(void);
 extern int classify_on_tflite(const int8_t* in_data, int8_t* out_data);
+#if defined(USE_TFL)
+extern void tflite_reset_last_invoke_cycles(void);
+extern uint64_t tflite_last_invoke_cycles(void);
+#endif
 
 void
 th_nn_init(void) {
@@ -328,6 +341,22 @@ th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
 
     return status;
 
+}
+
+void
+th_nn_reset_last_invoke_cycles(void) {
+#if defined(USE_TFL)
+    tflite_reset_last_invoke_cycles();
+#endif
+}
+
+uint64_t
+th_nn_last_invoke_cycles(void) {
+#if defined(USE_TFL)
+    return tflite_last_invoke_cycles();
+#else
+    return 0;
+#endif
 }
 
 #else
@@ -849,5 +878,13 @@ th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
     return status == ARM_CMSIS_NN_SUCCESS ? EE_STATUS_OK : EE_STATUS_ERROR;
 #endif
 }
-#endif
 
+void
+th_nn_reset_last_invoke_cycles(void) {
+}
+
+uint64_t
+th_nn_last_invoke_cycles(void) {
+    return 0;
+}
+#endif

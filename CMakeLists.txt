@@ -1,15 +1,55 @@
 cmake_minimum_required(VERSION 3.10.2)
+
+# Use fresh extraction timestamps for downloaded dependencies when supported.
+if(POLICY CMP0135)
+	cmake_policy(SET CMP0135 NEW)
+	set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
+endif()
+
 project(audiomark
 	DESCRIPTION "Firmware for the AudoMark Self-Hosted Benchmark"
 	LANGUAGES C CXX
 	VERSION 1.0.0)
 
-set(CMAKE_C_FLAGS "-O3")
-set(CMAKE_CXX_FLAGS "-O3")
+# Keep baseline flags configurable so ports/toolchains can add their own tuning
+# without editing this top-level file.
+set(AUDIOMARK_C_FLAGS "-O3" CACHE STRING "Base C compiler flags")
+set(AUDIOMARK_CXX_FLAGS "-O3" CACHE STRING "Base C++ compiler flags")
+set(AUDIOMARK_EXTRA_COMPILE_FLAGS "" CACHE STRING "Extra compiler flags applied to C and C++ sources")
+set(AUDIOMARK_EXTRA_C_FLAGS "" CACHE STRING "Extra compiler flags applied only to C sources")
+set(AUDIOMARK_EXTRA_CXX_FLAGS "" CACHE STRING "Extra compiler flags applied only to C++ sources")
+option(AUDIOMARK_STATIC_LINK "Link generated executables statically" OFF)
+
+# TensorFlow Lite/Abseil need a consistent C++ standard across their targets.
+set(CMAKE_C_FLAGS "${AUDIOMARK_C_FLAGS}")
+set(CMAKE_CXX_FLAGS "${AUDIOMARK_CXX_FLAGS}")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "Propagate C++ standard requirements through Abseil targets" FORCE)
+
+# Ask dependencies that honor BUILD_SHARED_LIBS to prefer static libraries.
+if(AUDIOMARK_STATIC_LINK)
+	set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build dependencies as static libraries" FORCE)
+endif()
 
 # enable custom CPU tuning
 if(CPU)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=${CPU}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcpu=${CPU}")
+endif()
+
+if(AUDIOMARK_EXTRA_COMPILE_FLAGS)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${AUDIOMARK_EXTRA_COMPILE_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${AUDIOMARK_EXTRA_COMPILE_FLAGS}")
+endif()
+
+if(AUDIOMARK_EXTRA_C_FLAGS)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${AUDIOMARK_EXTRA_C_FLAGS}")
+endif()
+
+if(AUDIOMARK_EXTRA_CXX_FLAGS)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${AUDIOMARK_EXTRA_CXX_FLAGS}")
 endif()
 
 include_directories(lib/speexdsp)
@@ -147,6 +187,20 @@ add_executable(test_kws ${TEST_KWS_SOURCE})
 
 add_executable(audiomark ${EE_SOURCE} ${TH_SOURCE})
 
+# Ports can attach target-specific sources and options without hardcoding their
+# implementation details here.
+if(PORT_AUDIOMARK_SOURCE)
+	target_sources(audiomark PRIVATE ${PORT_AUDIOMARK_SOURCE})
+endif()
+
+if(PORT_AUDIOMARK_LINK_OPTIONS)
+	target_link_options(audiomark PRIVATE ${PORT_AUDIOMARK_LINK_OPTIONS})
+endif()
+
+if(PORT_AUDIOMARK_COMPILE_DEFINITIONS)
+	target_compile_definitions(audiomark PRIVATE ${PORT_AUDIOMARK_COMPILE_DEFINITIONS})
+endif()
+
 set(ALL_TARGETS
 	audiomark
 	test_kws
@@ -168,6 +222,18 @@ if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
 else()
 	foreach(tgt IN LISTS ALL_TARGETS)
 		if(TARGET ${tgt})
+			# Keep static linking opt-in because not every platform/toolchain can
+			# provide fully static system and C++ runtime libraries.
+			if(AUDIOMARK_STATIC_LINK)
+				set_target_properties(${tgt} PROPERTIES
+					LINK_SEARCH_START_STATIC ON
+					LINK_SEARCH_END_STATIC ON
+				)
+				target_link_options(${tgt} PRIVATE
+					-static
+					-static-libgcc
+				)
+			endif()
 			target_link_libraries(${tgt} ${EXTRA_LIBS})
 		endif()
 	endforeach()
