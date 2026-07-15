@@ -6,18 +6,28 @@
  */
 
 #include <stdint.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #if defined(AUDIOMARK_ARM_PROFILE_COUNTER_LINUX_NS)
 #include <time.h>
+#endif
+#if defined(AUDIOMARK_ARM_PROFILE_PMU_LIBPMU)
+#include "benchmark.h"
 #endif
 
 #include "ee_api.h"
 #include "ee_audiomark.h"
 
-#define AUDIO_COUNTER_MAX_ITERATIONS 20
+#define AUDIO_COUNTER_MAX_ITERATIONS 50
+
 #define AUDIO_COUNTER_ESTIMATE_FIRST_ITERATION 10
+#if defined(AUDIOMARK_ARM_PROFILE_COUNTER_LINUX_NS)
+#define AUDIO_COUNTER_KWS_MIN_TICKS 100000ULL
+#else
 #define AUDIO_COUNTER_KWS_MIN_TICKS 1000ULL
+#endif
 
 #if defined(AUDIOMARK_ARM_PROFILE_COUNTER_LINUX_NS)
 #define AUDIO_PROFILE_COUNTER_UNIT "ns"
@@ -43,6 +53,17 @@ static uint64_t stage_totals[AUDIO_PROFILE_STAGE_COUNT];
 static uint32_t stage_counts[AUDIO_PROFILE_STAGE_COUNT];
 static uint32_t audio_profile_sample_count;
 static int      audio_profile_printed;
+static int      audio_profile_pmu_active;
+static int      audio_profile_pmu_initialized;
+static int      audio_profile_pmu_estimate_window_started;
+static int      audio_profile_pmu_failed;
+
+#if defined(AUDIOMARK_ARM_PROFILE_PMU_PERFMON)
+static FILE       *audio_profile_perfmon_fp;
+static const char *audio_profile_perfmon_events = "17 8 33 27 114 115 0";
+#elif defined(AUDIOMARK_ARM_PROFILE_PMU_LIBPMU)
+static const char *audio_profile_libpmu_events = "8,33,27,114,115,0";
+#endif
 
 int32_t __real_ee_abf_f32(int32_t command, void **pp_inst, void *p_data, void *p_params);
 int32_t __real_ee_aec_f32(int32_t command, void **pp_inst, void *p_data, void *p_params);
@@ -70,6 +91,156 @@ audio_profile_read_counter(void)
 #else
     return 0;
 #endif
+}
+
+static void
+audio_profile_print_call_error(const char *call)
+{
+    if (errno != 0)
+    {
+        fprintf(stderr, "error: %s failed: %s\n", call, strerror(errno));
+    }
+    else
+    {
+        fprintf(stderr, "error: %s failed without errno\n", call);
+    }
+}
+
+static int
+audio_profile_pmu_start(const char *label)
+{
+    (void)label;
+
+    if (audio_profile_pmu_failed)
+    {
+        return 0;
+    }
+
+    if (audio_profile_pmu_active)
+    {
+        return 1;
+    }
+
+#if defined(AUDIOMARK_ARM_PROFILE_PMU_LIBPMU)
+    if (!audio_profile_pmu_initialized)
+    {
+        setenv(ENV_PMU_TYPE, "user", 1);
+        setenv(ENV_PERF_EVENTS, audio_profile_libpmu_events, 0);
+#if defined(AUDIOMARK_LIBPMU_FILE_PREFIX)
+        setenv(ENV_FILE_PREFIX, AUDIOMARK_LIBPMU_FILE_PREFIX, 0);
+#endif
+        if (libpmu_mainstart() != 0)
+        {
+            audio_profile_print_call_error("libpmu_mainstart");
+            audio_profile_pmu_failed = 1;
+            return 0;
+        }
+        audio_profile_pmu_initialized = 1;
+    }
+
+    if (libpmu_benchstart() != 0)
+    {
+        audio_profile_print_call_error("libpmu_benchstart");
+        audio_profile_pmu_failed = 1;
+        return 0;
+    }
+    __asm volatile("SEV \n\t" : : :);
+    audio_profile_pmu_active = 1;
+    return 1;
+#elif defined(AUDIOMARK_ARM_PROFILE_PMU_PERFMON)
+    if (!audio_profile_perfmon_fp)
+    {
+        audio_profile_perfmon_fp = fopen("/proc/perfmon", "r+");
+        if (!audio_profile_perfmon_fp)
+        {
+            fprintf(stderr, "error: could not open /proc/perfmon: %s\n", strerror(errno));
+            audio_profile_pmu_failed = 1;
+            return 0;
+        }
+    }
+
+    fprintf(audio_profile_perfmon_fp, "%s\n", audio_profile_perfmon_events);
+    fflush(audio_profile_perfmon_fp);
+    __asm volatile("SEV \n\t" : : :);
+    audio_profile_pmu_active = 1;
+    return 1;
+#else
+    audio_profile_pmu_active = 1;
+    return 1;
+#endif
+}
+
+static void
+audio_profile_pmu_stop(const char *label)
+{
+    if (!audio_profile_pmu_active)
+    {
+        return;
+    }
+
+#if defined(AUDIOMARK_ARM_PROFILE_PMU_LIBPMU)
+    __asm volatile("SEV \n\t" : : :);
+    if (libpmu_benchend((char *)label) != 0)
+    {
+        fprintf(stderr, "error: libpmu_benchend failed: %s\n", strerror(errno));
+    }
+#elif defined(AUDIOMARK_ARM_PROFILE_PMU_PERFMON)
+    (void)label;
+    __asm volatile("SEV \n\t" : : :);
+
+    if (audio_profile_perfmon_fp)
+    {
+        /* Dump stats first, perfmon resets them on disable. */
+        (void)fgetc(audio_profile_perfmon_fp);
+        fputs("300\n", audio_profile_perfmon_fp);
+        fflush(audio_profile_perfmon_fp);
+        fclose(audio_profile_perfmon_fp);
+        audio_profile_perfmon_fp = NULL;
+    }
+#else
+    (void)label;
+#endif
+
+    audio_profile_pmu_active = 0;
+}
+
+static void
+audio_profile_pmu_finish(void)
+{
+#if defined(AUDIOMARK_ARM_PROFILE_PMU_LIBPMU)
+    if (audio_profile_pmu_initialized)
+    {
+        if (libpmu_mainend() != 0)
+        {
+            fprintf(stderr, "error: libpmu_mainend failed: %s\n", strerror(errno));
+        }
+        audio_profile_pmu_initialized = 0;
+    }
+#endif
+}
+
+static void
+audio_profile_pmu_start_before_first_iteration(void)
+{
+    if (audio_profile_sample_count == 0
+        && !audio_profile_pmu_estimate_window_started
+        && !audio_profile_pmu_failed)
+    {
+        (void)audio_profile_pmu_start("heatup");
+    }
+}
+
+static void
+audio_profile_pmu_start_estimate_window(void)
+{
+    if (audio_profile_pmu_estimate_window_started)
+    {
+        return;
+    }
+
+    audio_profile_pmu_stop("heatup");
+    (void)audio_profile_pmu_start("steady");
+    audio_profile_pmu_estimate_window_started = 1;
 }
 
 static double
@@ -122,6 +293,27 @@ audio_profile_print_summary_row(enum audio_profile_stage stage)
            count,
            (unsigned long long)total,
            count == 0 ? 0 : (unsigned long long)(total / count));
+}
+
+static void
+audio_profile_print_pmu_status(void)
+{
+#if defined(AUDIOMARK_ARM_PROFILE_PMU_LIBPMU)
+    const char *backend = "libpmu";
+#elif defined(AUDIOMARK_ARM_PROFILE_PMU_PERFMON)
+    const char *backend = "perfmon";
+#else
+    const char *backend = NULL;
+#endif
+
+    if (backend == NULL)
+    {
+        return;
+    }
+
+    printf("Audio PMU capture (%s): %s\n",
+           backend,
+           audio_profile_pmu_failed ? "failed" : "completed");
 }
 
 static void
@@ -194,8 +386,12 @@ audio_profile_print_estimate(void)
     printf("%-14s %8u %16llu\n", "ABF", window_count, (unsigned long long)avg_abf);
     printf("%-14s %8u %16llu\n", "AEC", window_count, (unsigned long long)avg_aec);
     printf("%-14s %8u %16llu\n", "ANR", window_count, (unsigned long long)avg_anr);
+#if AUDIOMARK_SKIP_TFL_INFERENCE
+    printf("AudioMark/MHz skipped (noML)\n");
+#else
     printf("%-14s %8u %16llu\n", "KWS", kws_count, (unsigned long long)avg_kws);
     printf("AudioMark/MHz = %.6f\n", audiomark_per_mhz);
+#endif
 }
 
 static void
@@ -235,6 +431,7 @@ audio_profile_print_summary(void)
     audio_profile_print_summary_row(AUDIO_PROFILE_ANR);
     audio_profile_print_summary_row(AUDIO_PROFILE_KWS);
     audio_profile_print_summary_row(AUDIO_PROFILE_INVOKE);
+    audio_profile_print_pmu_status();
     audio_profile_print_estimate();
 }
 
@@ -254,6 +451,8 @@ audio_profile_wrap_component(enum audio_profile_stage stage,
     {
         return real_fn(command, pp_inst, p_data, p_params);
     }
+
+    audio_profile_pmu_start_before_first_iteration();
 
     begin  = audio_profile_read_counter();
     status = real_fn(command, pp_inst, p_data, p_params);
@@ -298,6 +497,8 @@ __wrap_ee_kws_f32(int32_t command, void **pp_inst, void *p_data, void *p_params)
         return __real_ee_kws_f32(command, pp_inst, p_data, p_params);
     }
 
+    audio_profile_pmu_start_before_first_iteration();
+
     th_nn_reset_last_invoke_cycles();
 
     begin  = audio_profile_read_counter();
@@ -317,8 +518,15 @@ __wrap_ee_kws_f32(int32_t command, void **pp_inst, void *p_data, void *p_params)
 
     audio_profile_sample_count++;
 
+    if (audio_profile_sample_count == AUDIO_COUNTER_ESTIMATE_FIRST_ITERATION)
+    {
+        audio_profile_pmu_start_estimate_window();
+    }
+
     if (audio_profile_sample_count >= AUDIO_COUNTER_MAX_ITERATIONS)
     {
+        audio_profile_pmu_stop("steady");
+        audio_profile_pmu_finish();
         audio_profile_print_summary();
         fflush(stdout);
 #if defined(AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES)

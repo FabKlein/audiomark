@@ -23,6 +23,13 @@ option(AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES "Exit after collecting Arm-port 
 set(AUDIOMARK_ARM_PROFILE_COUNTER "arch" CACHE STRING "Arm-port profile counter backend: arch or linux_ns")
 set(AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ "" CACHE STRING "Core frequency in Hz used to convert time-based profile samples to cycles")
 set_property(CACHE AUDIOMARK_ARM_PROFILE_COUNTER PROPERTY STRINGS arch linux_ns)
+set(AUDIOMARK_ARM_PROFILE_PMU_BACKEND "none" CACHE STRING
+    "Arm-port PMU capture backend used by private profiling: none, libpmu, or perfmon")
+set_property(CACHE AUDIOMARK_ARM_PROFILE_PMU_BACKEND PROPERTY STRINGS none libpmu perfmon)
+set(AUDIOMARK_LIBPMU_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../libpmu/saw/lib/libpmu" CACHE PATH
+    "Path to CPW libpmu root")
+set(AUDIOMARK_LIBPMU_FILE_PREFIX "/tmp/audiomark_libpmu" CACHE STRING
+    "Prefix for libpmu output logs when AUDIOMARK_ARM_PROFILE_PMU_BACKEND=libpmu")
 
 set(_USE_CMSISDSP_NEON_DEFAULT OFF)
 if(CPU MATCHES "^cortex-a")
@@ -80,6 +87,63 @@ if(AUDIOMARK_ARM_PROFILE)
             AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ=${AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ}
         )
     endif()
+
+    if(AUDIOMARK_ARM_PROFILE_PMU_BACKEND STREQUAL "libpmu")
+        if(NOT EXISTS "${AUDIOMARK_LIBPMU_ROOT}/include/benchmark.h")
+            message(FATAL_ERROR
+                "AUDIOMARK_ARM_PROFILE_PMU_BACKEND=libpmu requires "
+                "AUDIOMARK_LIBPMU_ROOT to point at a CPW libpmu tree")
+        endif()
+
+        get_filename_component(_AUDIOMARK_LIBPMU_SAW_ROOT
+            "${AUDIOMARK_LIBPMU_ROOT}/../.." ABSOLUTE)
+        set(_AUDIOMARK_LIBPMU_CPW_CONFIG_API
+            "${_AUDIOMARK_LIBPMU_SAW_ROOT}/lib/cpw_config_api")
+        if(NOT EXISTS "${_AUDIOMARK_LIBPMU_CPW_CONFIG_API}/cpw_config_api.c")
+            message(FATAL_ERROR
+                "AUDIOMARK_ARM_PROFILE_PMU_BACKEND=libpmu requires "
+                "${_AUDIOMARK_LIBPMU_CPW_CONFIG_API}/cpw_config_api.c")
+        endif()
+        if(NOT EXISTS "${_AUDIOMARK_LIBPMU_SAW_ROOT}/pmu_table/arm_pmu_table.h")
+            message(FATAL_ERROR
+                "AUDIOMARK_ARM_PROFILE_PMU_BACKEND=libpmu requires "
+                "${_AUDIOMARK_LIBPMU_SAW_ROOT}/pmu_table/arm_pmu_table.h")
+        endif()
+
+        # The copied CPW libpmu tree is used directly. The extra include paths
+        # account for helper files that live outside lib/libpmu itself.
+        include_directories(BEFORE
+            ${_AUDIOMARK_LIBPMU_CPW_CONFIG_API}
+            ${_AUDIOMARK_LIBPMU_SAW_ROOT}/pmu_table
+            ${AUDIOMARK_LIBPMU_ROOT}/include
+        )
+
+        list(APPEND PORT_AUDIOMARK_SOURCE
+            ${AUDIOMARK_LIBPMU_ROOT}/src/benchmark.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/dummy.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/env.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/msg.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/perf.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/perfmon.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/sigstop.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/spa.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/timer.c
+            ${AUDIOMARK_LIBPMU_ROOT}/src/user.c
+            ${_AUDIOMARK_LIBPMU_CPW_CONFIG_API}/cpw_config_api.c
+        )
+        list(APPEND PORT_AUDIOMARK_COMPILE_DEFINITIONS
+            AUDIOMARK_ARM_PROFILE_PMU_LIBPMU
+            AUDIOMARK_LIBPMU_FILE_PREFIX="${AUDIOMARK_LIBPMU_FILE_PREFIX}"
+            GIT_VERSION="audiomark-cmake"
+        )
+    elseif(AUDIOMARK_ARM_PROFILE_PMU_BACKEND STREQUAL "perfmon")
+        list(APPEND PORT_AUDIOMARK_COMPILE_DEFINITIONS
+            AUDIOMARK_ARM_PROFILE_PMU_PERFMON
+        )
+    elseif(NOT AUDIOMARK_ARM_PROFILE_PMU_BACKEND STREQUAL "none")
+        message(FATAL_ERROR
+            "AUDIOMARK_ARM_PROFILE_PMU_BACKEND must be one of: none, libpmu, perfmon")
+    endif()
 endif()
 
 # ------------------------------------------------------------
@@ -123,6 +187,36 @@ if(USE_ARMNN)
     set(ARMCOMPUTE_BUILD_DIR ${CMAKE_BINARY_DIR}/acl-build)
     set(ARMNN_BUILD_DIR ${CMAKE_BINARY_DIR}/armnn-build)
     set(HALF_INCLUDE_DIR ${PORT_DIR}/libs/external/armnn/third-party/half)
+    set(AUDIOMARK_ARMNN_OMP_INCLUDE_DIR "" CACHE PATH
+        "Directory containing omp.h for the ACL OMP scheduler source")
+
+    if(NOT AUDIOMARK_ARMNN_OMP_INCLUDE_DIR)
+        find_program(_AUDIOMARK_AARCH64_GCC aarch64-linux-gnu-gcc)
+        if(_AUDIOMARK_AARCH64_GCC)
+            execute_process(
+                COMMAND ${_AUDIOMARK_AARCH64_GCC} -print-file-name=include
+                OUTPUT_VARIABLE _AUDIOMARK_AARCH64_GCC_INCLUDE_DIR
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            if(EXISTS "${_AUDIOMARK_AARCH64_GCC_INCLUDE_DIR}/omp.h")
+                set(AUDIOMARK_ARMNN_OMP_INCLUDE_DIR
+                    "${_AUDIOMARK_AARCH64_GCC_INCLUDE_DIR}" CACHE PATH
+                    "Directory containing omp.h for the ACL OMP scheduler source"
+                    FORCE)
+            endif()
+        endif()
+    endif()
+
+    set(AUDIOMARK_ARMNN_ACL_CXX_FLAGS "")
+    if(AUDIOMARK_ARMNN_OMP_INCLUDE_DIR)
+        set(AUDIOMARK_ARMNN_ACL_CXX_FLAGS
+            "-isystem ${AUDIOMARK_ARMNN_OMP_INCLUDE_DIR} -Wno-ignored-attributes")
+        message(STATUS "Using omp.h from ${AUDIOMARK_ARMNN_OMP_INCLUDE_DIR} for ACL")
+    else()
+        message(WARNING
+            "Could not find omp.h for ACL. Set AUDIOMARK_ARMNN_OMP_INCLUDE_DIR "
+            "or install an aarch64 cross OpenMP header.")
+    endif()
 
     # build ACL
     ExternalProject_Add(acl_external
@@ -136,6 +230,7 @@ if(USE_ARMNN)
         -DARM_COMPUTE_BUILD_SHARED_LIB=OFF
         -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
         -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCMAKE_CXX_FLAGS=${AUDIOMARK_ARMNN_ACL_CXX_FLAGS}
          INSTALL_COMMAND ""
         )
 
@@ -176,6 +271,7 @@ if(USE_ARMNN)
         -DARMNNREF=1
         -DBUILD_TF_LITE_PARSER=ON
         -DBUILD_SHARED_LIBS=OFF
+        -DBUILD_GATORD_MOCK=OFF
         -DBUILD_TESTS=OFF
         -DBUILD_UNIT_TESTS=OFF
         -DFLATBUFFERS_INCLUDE_PATH=${FLATBUFFERS_ROOT}/include/
@@ -212,6 +308,7 @@ if(USE_ARMNN)
         ${ACL_BUILD_DIR}/libarm_compute.a
         pthread
         dl
+        stdc++
     )
 
 

@@ -328,16 +328,26 @@ extern uint64_t tflite_last_invoke_cycles(void);
 
 void
 th_nn_init(void) {
+#if AUDIOMARK_SKIP_TFL_INFERENCE
+    return;
+#else
     tflite_nn_init();
-
+#endif
 }
 
 ee_status_t
 th_nn_classify(const input_tensor_t in_data, output_tensor_t out_data) {
 
+#if AUDIOMARK_SKIP_TFL_INFERENCE
+    ee_status_t status = EE_STATUS_OK;
+
+    (void)in_data;
+    th_memset(out_data, 0, sizeof(output_tensor_t));
+#else
     ee_status_t status = EE_STATUS_ERROR;
 
     status = classify_on_tflite(in_data, out_data);
+#endif
 
     return status;
 

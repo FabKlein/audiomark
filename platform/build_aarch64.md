@@ -17,14 +17,16 @@ Example Cortex-A320 TensorFlow Lite build with Arm Clang, static linking, and
 the Omax configuration:
 
 ```sh
+ATFE_ROOT=/path/to/ATfE-22.1.0-Linux-x86_64
+
 cmake -S . -B build_a320 -G "Unix Makefiles" \
   -DCPU=cortex-a320 \
   -DPORT_DIR=ports/arm \
   -DUSE_TFL=ON \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER=/mnt/data/fabkle01/toolchains/ATfE-22.1.0-Linux-x86_64/bin/clang \
-  -DCMAKE_CXX_COMPILER=/mnt/data/fabkle01/toolchains/ATfE-22.1.0-Linux-x86_64/bin/clang \
-  -DAUDIOMARK_EXTRA_COMPILE_FLAGS=--config=/mnt/data/fabkle01/toolchains/ATfE-22.1.0-Linux-x86_64/bin/Omax.cfg \
+  -DCMAKE_C_COMPILER=${ATFE_ROOT}/bin/clang \
+  -DCMAKE_CXX_COMPILER=${ATFE_ROOT}/bin/clang \
+  -DAUDIOMARK_EXTRA_COMPILE_FLAGS=--config=${ATFE_ROOT}/bin/Omax.cfg \
   -DAUDIOMARK_STATIC_LINK=ON
 ```
 
@@ -38,6 +40,69 @@ Run:
 
 ```sh
 ./build_a320/audiomark
+```
+
+## Arm NN Backend
+
+Arm NN can be used instead of the TensorFlow Lite/XNNPACK backend by enabling
+`USE_ARMNN` and keeping the other neural-network backends disabled. The Arm port
+builds Arm NN, Arm Compute Library, and FlatBuffers from
+`ports/arm/libs/external`.
+
+Example Cortex-A53 Arm NN build with ATfE, Omax, static linking, and profiling
+disabled:
+
+```sh
+ATFE_ROOT=/path/to/ATfE-22.1.0-Linux-x86_64
+
+cmake -S . -B build_a53_armnn -G "Unix Makefiles" \
+  -DCPU=cortex-a53 \
+  -DPORT_DIR=ports/arm \
+  -DUSE_ARMNN=ON \
+  -DUSE_TFL=OFF \
+  -DUSE_IMX93=OFF \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=${ATFE_ROOT}/bin/clang \
+  -DCMAKE_CXX_COMPILER=${ATFE_ROOT}/bin/clang \
+  -DAUDIOMARK_EXTRA_COMPILE_FLAGS=--config=${ATFE_ROOT}/bin/Omax.cfg \
+  -DAUDIOMARK_STATIC_LINK=ON \
+  -DAUDIOMARK_ARM_PROFILE=OFF
+```
+
+Build the benchmark:
+
+```sh
+cmake --build build_a53_armnn --target audiomark --parallel 4
+```
+
+The generated binary is:
+
+```sh
+./build_a53_armnn/audiomark
+```
+
+Arm NN build notes:
+
+- `USE_ARMNN`, `USE_TFL`, and `USE_IMX93` are mutually exclusive.
+- The Arm NN path uses the TensorFlow Lite parser, so the TensorFlow source
+  submodule is still required even though XNNPACK is not used.
+- The Arm NN external build disables `GatordMock`; it is a profiling test tool
+  and is not needed for AudioMark.
+- The vendored ACL CMake build is configured without OpenMP. If your toolchain
+  still needs an `omp.h` include path while configuring ACL, set
+  `AUDIOMARK_ARMNN_OMP_INCLUDE_DIR`.
+- The final static executable needs the C++ runtime linked explicitly; the Arm
+  NN backend link list includes `stdc++` for that.
+
+If only the CMake options changed, do not clean the whole build tree. Reconfigure
+and rebuild:
+
+```sh
+cmake -S . -B build_a53_armnn \
+  -DPORT_DIR=ports/arm \
+  -DUSE_ARMNN=ON \
+  -DAUDIOMARK_ARM_PROFILE=OFF
+cmake --build build_a53_armnn --target audiomark --parallel 4
 ```
 
 ## Private Component Profiling
@@ -116,6 +181,7 @@ cmake --build build_a320 --target clean
 | `AUDIOMARK_EXTRA_C_FLAGS` | empty | Extra flags added only to C compilation. |
 | `AUDIOMARK_EXTRA_CXX_FLAGS` | empty | Extra flags added only to C++ compilation. |
 | `AUDIOMARK_STATIC_LINK` | `OFF` | Request static executable linking and static dependency builds where supported. |
+| `AUDIOMARK_ARMNN_OMP_INCLUDE_DIR` | empty | Optional include directory containing `omp.h` for the Arm NN/ACL external build. Auto-detected from `aarch64-linux-gnu-gcc` when available. |
 | `AUDIOMARK_ARM_PROFILE` | `OFF` | Enable private Arm-port component timing wrappers. |
 | `AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES` | `ON` | Exit after collecting the profiling sample window. Only used when profiling is enabled. |
 | `AUDIOMARK_ARM_PROFILE_COUNTER` | `arch` | Profiling counter backend. Valid values: `arch`, `linux_ns`. |
