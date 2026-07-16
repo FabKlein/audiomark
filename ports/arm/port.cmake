@@ -19,6 +19,7 @@ option(USE_ARMNN "Enable Arm NN backend (linux)" OFF)
 option(USE_TFL "Enable TensorFlow Lite backend (linux)" OFF)
 option(USE_IMX93 "Use NXP i.MX93 TFLite fork and Ethos-U delegate (linux)" OFF)
 option(AUDIOMARK_ARM_PROFILE "Enable private Arm-port AudioMark component timing" OFF)
+option(AUDIOMARK_ARM_WHOLE_RUN_PERFMON "Instrument normal AudioMark run-speed and measurement phases with /proc/perfmon" OFF)
 option(AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES "Exit after collecting Arm-port timing samples" ON)
 set(AUDIOMARK_ARM_PROFILE_COUNTER "arch" CACHE STRING "Arm-port profile counter backend: arch or linux_ns")
 set(AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ "" CACHE STRING "Core frequency in Hz used to convert time-based profile samples to cycles")
@@ -52,6 +53,18 @@ if(BACKEND_COUNT GREATER 1)
     message(FATAL_ERROR
         "Only one backend can be enabled. "
         "Currently set: USE_ARMNN=${USE_ARMNN}, USE_IMX93=${USE_IMX93}, USE_TFL=${USE_TFL}"
+    )
+endif()
+
+if(AUDIOMARK_ARM_PROFILE AND AUDIOMARK_ARM_WHOLE_RUN_PERFMON)
+    message(FATAL_ERROR
+        "AUDIOMARK_ARM_PROFILE and AUDIOMARK_ARM_WHOLE_RUN_PERFMON are separate "
+        "profiling modes; enable only one at a time")
+endif()
+
+if(AUDIOMARK_ARM_WHOLE_RUN_PERFMON)
+    list(APPEND PORT_AUDIOMARK_COMPILE_DEFINITIONS
+        AUDIOMARK_ARM_WHOLE_RUN_PERFMON
     )
 endif()
 

@@ -151,6 +151,30 @@ When `AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES=ON`, the KWS wrapper exits after
 `AUDIO_COUNTER_MAX_ITERATIONS` samples. This is for private platform testing,
 not official benchmark scoring.
 
+## Whole-Run Perfmon Profiling
+
+`AUDIOMARK_ARM_WHOLE_RUN_PERFMON` keeps the normal AudioMark execution path and
+instruments `main.c` directly with `/proc/perfmon`. Unlike the component
+profiler, it does not wrap `ABF`, `AEC`, `ANR`, or `KWS`.
+
+This mode forces:
+
+- One run-speed iteration, surrounded by perfmon start/stop markers.
+- One measurement iteration, surrounded by perfmon start/stop markers.
+
+Example:
+
+```sh
+cmake -S . -B build_a320 \
+  -DAUDIOMARK_ARM_PROFILE=OFF \
+  -DAUDIOMARK_ARM_WHOLE_RUN_PERFMON=ON
+cmake --build build_a320 --target audiomark --parallel 2
+```
+
+The printed AudioMark score is then based on the single measured whole
+iteration. This is intended for private PMU collection flows where the PMU
+counts should cover the same unit of work as the benchmark score formula.
+
 ## Clean
 
 Rebuild from scratch:
@@ -183,6 +207,7 @@ cmake --build build_a320 --target clean
 | `AUDIOMARK_STATIC_LINK` | `OFF` | Request static executable linking and static dependency builds where supported. |
 | `AUDIOMARK_ARMNN_OMP_INCLUDE_DIR` | empty | Optional include directory containing `omp.h` for the Arm NN/ACL external build. Auto-detected from `aarch64-linux-gnu-gcc` when available. |
 | `AUDIOMARK_ARM_PROFILE` | `OFF` | Enable private Arm-port component timing wrappers. |
+| `AUDIOMARK_ARM_WHOLE_RUN_PERFMON` | `OFF` | Enable direct `/proc/perfmon` markers around one run-speed iteration and one measured iteration in `main.c`. Mutually exclusive with `AUDIOMARK_ARM_PROFILE`. |
 | `AUDIOMARK_ARM_PROFILE_EXIT_AFTER_SAMPLES` | `ON` | Exit after collecting the profiling sample window. Only used when profiling is enabled. |
 | `AUDIOMARK_ARM_PROFILE_COUNTER` | `arch` | Profiling counter backend. Valid values: `arch`, `linux_ns`. |
 | `AUDIOMARK_ARM_PROFILE_CORE_FREQ_HZ` | empty | Core frequency used to convert time-based samples to cycles for `AudioMark/MHz`. Example: `2000000000`. |

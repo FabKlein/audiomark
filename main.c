@@ -14,6 +14,10 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#if defined(AUDIOMARK_ARM_WHOLE_RUN_PERFMON)
+#include <errno.h>
+#include <string.h>
+#endif
 
 #include "ee_audiomark.h"
 
@@ -32,6 +36,52 @@
 #endif
 #include <assert.h>
 
+
+#if defined(AUDIOMARK_ARM_WHOLE_RUN_PERFMON)
+static FILE       *audiomark_perfmon_fp;
+static const char *audiomark_perfmon_events = "17 8 33 27 114 115 0";
+
+static bool
+audiomark_perfmon_start(const char *phase)
+{
+    (void)phase;
+
+    if (!audiomark_perfmon_fp)
+    {
+        audiomark_perfmon_fp = fopen("/proc/perfmon", "r+");
+        if (!audiomark_perfmon_fp)
+        {
+            fprintf(stderr, "error: could not open /proc/perfmon: %s\n",
+                    strerror(errno));
+            return true;
+        }
+    }
+
+    fprintf(audiomark_perfmon_fp, "%s\n", audiomark_perfmon_events);
+    fflush(audiomark_perfmon_fp);
+    __asm volatile("SEV \n\t" : : : "memory");
+
+    return false;
+}
+
+static void
+audiomark_perfmon_stop(const char *phase)
+{
+    (void)phase;
+
+    __asm volatile("SEV \n\t" : : : "memory");
+
+    if (audiomark_perfmon_fp)
+    {
+        /* Dump stats before disabling; the perfmon driver resets on disable. */
+        (void)fgetc(audiomark_perfmon_fp);
+        fputs("300\n", audiomark_perfmon_fp);
+        fflush(audiomark_perfmon_fp);
+        fclose(audiomark_perfmon_fp);
+        audiomark_perfmon_fp = NULL;
+    }
+}
+#endif
 
 
 uint64_t
@@ -78,6 +128,25 @@ time_audiomark_run(uint32_t iterations, uint64_t *dt)
     return err;
 }
 
+#if defined(AUDIOMARK_ARM_WHOLE_RUN_PERFMON)
+static bool
+time_audiomark_run_with_perfmon(uint32_t iterations, uint64_t *dt,
+                                const char *phase)
+{
+    bool err = false;
+
+    if (audiomark_perfmon_start(phase))
+    {
+        return true;
+    }
+
+    err = time_audiomark_run(iterations, dt);
+    audiomark_perfmon_stop(phase);
+
+    return err;
+}
+#endif
+
 int
 main(void)
 {
@@ -95,6 +164,11 @@ main(void)
 
     printf("Computing run speed\n");
 
+#if defined(AUDIOMARK_ARM_WHOLE_RUN_PERFMON)
+    printf("Whole-run perfmon profiling enabled\n");
+    iterations = 1;
+    err        = time_audiomark_run_with_perfmon(iterations, &dt, "run-speed");
+#else
     do
     {
         iterations *= 2;
@@ -104,6 +178,7 @@ main(void)
             break;
         }
     } while (dt < 1e6f);
+#endif
 
     if (err)
     {
@@ -111,14 +186,22 @@ main(void)
         goto exit;
     }
 
+#if !defined(AUDIOMARK_ARM_WHOLE_RUN_PERFMON)
     // Must run for 10 sec. or at least 10 iterations
     float scale = 11e6f / dt;
     iterations  = (uint32_t)((float)iterations * scale);
     iterations  = iterations < 10 ? 10 : iterations;
+#else
+    iterations = 1;
+#endif
 
     printf("Measuring\n");
 
+#if defined(AUDIOMARK_ARM_WHOLE_RUN_PERFMON)
+    err = time_audiomark_run_with_perfmon(iterations, &dt, "measurement");
+#else
     err = time_audiomark_run(iterations, &dt);
+#endif
     if (err)
     {
         printf("Failed main performance run\n");
